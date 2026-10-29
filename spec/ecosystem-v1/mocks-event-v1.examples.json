@@ -1,0 +1,64 @@
+{
+  "description": "Appendix B of the W0 ADR draft (train mock-studio, 2026-10-29). Each invalid example mutates exactly one field of valid[0] and names it (law #27). W1's conformance suite runs every entry against W0_mocks-event-v1.schema.json.",
+  "valid": [
+    {
+      "schema": "mocks.event/v1",
+      "event_id": "evt-01HZX3K9Q0001",
+      "at": "2026-10-29T04:10:00.123Z",
+      "run_id": "leg-w10-openapi-r1",
+      "test_run_id": "tr-0001",
+      "step_id": "checkout.pay",
+      "correlation_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "correlation_source": "traceparent",
+      "mock": { "name": "openapi", "version": "0.1.0", "contract": "mocks.adapter/v1" },
+      "kind": "request.received",
+      "direction": "inbound",
+      "protocol": "http",
+      "summary": "POST /payments (operation createPayment)",
+      "outcome": "ok",
+      "latency_ms": 3,
+      "payload": { "redacted": true, "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001", "size": 212 }
+    },
+    {
+      "schema": "mocks.event/v1",
+      "event_id": "evt-01HZX3K9Q0002",
+      "at": "2026-10-29T04:10:01.500Z",
+      "run_id": "leg-w10-openapi-r1",
+      "correlation_id": "9a1c4d7e2b3f4a5b8c6d0e1f2a3b4c5d",
+      "correlation_source": "correlation-key",
+      "correlation_keys": { "recipient": "+000000000001" },
+      "mock": { "name": "sms-ucp", "version": "0.1.0", "contract": "mocks.adapter/v1" },
+      "kind": "message.delivered",
+      "direction": "outbound",
+      "protocol": "tcp",
+      "summary": "SMS delivered to the catcher (one-time PIN)",
+      "outcome": "fault",
+      "fault": "delivery-delay-ms"
+    },
+    {
+      "schema": "mocks.event/v1",
+      "event_id": "evt-01HZX3K9Q0003",
+      "at": "2026-10-29T04:10:02.000Z",
+      "run_id": "leg-w10-openapi-r1",
+      "correlation_id": "1f2e3d4c5b6a79881f2e3d4c5b6a7988",
+      "correlation_source": "generated",
+      "mock": { "name": "smtp-catcher", "version": "0.1.0", "contract": "mocks.adapter/v1" },
+      "kind": "x-smtp.starttls",
+      "direction": "internal",
+      "protocol": "smtp",
+      "summary": "STARTTLS negotiated"
+    }
+  ],
+  "invalid": [
+    { "breaks": "schema", "why": "unknown version must be refused by name", "patch": { "schema": "mocks.event/v2" } },
+    { "breaks": "run_id", "why": "uppercase and too short", "patch": { "run_id": "A1" } },
+    { "breaks": "correlation_id", "why": "all-zero trace-id is invalid in W3C Trace Context", "patch": { "correlation_id": "00000000000000000000000000000000" } },
+    { "breaks": "correlation_source", "why": "not in the vocabulary", "patch": { "correlation_source": "header" } },
+    { "breaks": "mock.contract", "why": "not a mocks.adapter version", "patch": { "mock": { "name": "openapi", "version": "0.1.0", "contract": "v1" } } },
+    { "breaks": "kind", "why": "neither in the vocabulary nor an x- custom kind", "patch": { "kind": "request" } },
+    { "breaks": "direction", "why": "not in the vocabulary", "patch": { "direction": "both" } },
+    { "breaks": "at", "why": "not UTC with millisecond precision", "patch": { "at": "2026-10-29T04:10:00+02:00" } },
+    { "breaks": "payload", "why": "redacted payload without its digest", "patch": { "payload": { "redacted": true, "size": 212 } } },
+    { "breaks": "additionalProperties", "why": "a private field outside the envelope", "patch": { "correlationId": "abc" } }
+  ]
+}

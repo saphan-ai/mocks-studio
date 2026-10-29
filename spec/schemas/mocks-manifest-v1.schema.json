@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mocks.manifest/v1",
+  "title": "Mock adapter manifest, version 1 (mocks.adapter/v1)",
+  "description": "The file a mock publishes as mocks.manifest.json, serves at GET /_mock/v1/manifest, or carries in container labels under the prefix mocks.studio/. Normative; spec/MOCK_ADAPTER_V1.md explains each field. The 'contract' field accepts any mocks.adapter version so that a manifest of a version this schema does not describe is refused BY NAME as an unknown version, never as a malformed document.",
+  "type": "object",
+  "required": ["contract", "name", "version", "protocols", "control", "safe_fields"],
+  "properties": {
+    "contract": { "type": "string", "pattern": "^mocks\\.adapter/v[0-9]+$" },
+    "name": { "$ref": "#/$defs/mock_name" },
+    "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "description": { "type": "string", "maxLength": 512 },
+    "protocols": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["http", "tcp", "smtp", "dns", "other"] }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^\\s/?#]+$", "description": "Base URL of the control endpoint: scheme, host and port, no path, no trailing slash." }
+      }
+    },
+    "settings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/setting" }
+    },
+    "safe_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/field_name" },
+      "description": "Payload fields the mock may export in clear. Every other field is exported redacted or not at all."
+    },
+    "correlation_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/field_name" }
+    },
+    "event_kinds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "properties": {
+          "kind": { "type": "string", "pattern": "^x-[a-z0-9-]+\\.[a-z0-9.-]+$" },
+          "description": { "type": "string", "maxLength": 512 }
+        }
+      }
+    },
+    "callouts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "target_setting"],
+        "properties": {
+          "name": { "$ref": "#/$defs/field_name" },
+          "target_setting": { "$ref": "#/$defs/field_name", "description": "Name of the string setting that carries the URL this call-out is sent to." },
+          "description": { "type": "string", "maxLength": 512 }
+        }
+      }
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "http": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "path"],
+              "properties": {
+                "method": { "enum": ["GET", "POST", "PUT", "DELETE"] },
+                "path": { "type": "string", "pattern": "^/[^\\s]*$" },
+                "body": { "type": "string", "maxLength": 4096 }
+              }
+            },
+            "tcp": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["send"],
+              "properties": {
+                "send": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\r\\n]*$", "description": "One line, sent without its terminator; the suite appends a line feed." }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "protocols": { "contains": { "const": "http" } } } },
+      "then": {
+        "required": ["conformance"],
+        "properties": { "conformance": { "required": ["probe"], "properties": { "probe": { "required": ["http"] } } } }
+      }
+    },
+    {
+      "if": { "properties": { "protocols": { "contains": { "const": "tcp" } } } },
+      "then": {
+        "required": ["conformance"],
+        "properties": { "conformance": { "required": ["probe"], "properties": { "probe": { "required": ["tcp"] } } } }
+      }
+    }
+  ],
+  "$defs": {
+    "mock_name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}$" },
+    "field_name": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,62}$" },
+    "setting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "default"],
+      "properties": {
+        "name": { "$ref": "#/$defs/field_name" },
+        "description": { "type": "string", "maxLength": 512 },
+        "type": { "enum": ["string", "integer", "number", "boolean"] },
+        "default": { "type": ["string", "number", "boolean"] },
+        "allowed": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": ["string", "number", "boolean"] } },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "scope": { "enum": ["run", "mock"], "default": "run" },
+        "effect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protocol", "value", "expect"],
+          "description": "A conformance hint: setting this value makes the next probe observably different from the default.",
+          "properties": {
+            "protocol": { "enum": ["http", "tcp"] },
+            "value": { "type": ["string", "number", "boolean"] },
+            "expect": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "http_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+                "tcp_reply": { "type": "string", "maxLength": 1024, "pattern": "^[^\\r\\n]*$" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
