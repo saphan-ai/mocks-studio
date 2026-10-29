@@ -58,6 +58,7 @@ const (
 	MutantNonSafeFieldInClear      = "non-safe-field-in-clear"
 	MutantCredentialInSummary      = "credential-in-summary"
 	MutantListenerStaysOpen        = "listener-stays-open"
+	MutantResponseSentInvalid      = "response-sent-invalid"
 )
 
 const (

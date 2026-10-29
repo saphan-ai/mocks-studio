@@ -3,6 +3,7 @@ package suite
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // event builds a valid mocks.event/v1 object for the test manifest, of kind on runID.
@@ -61,4 +62,59 @@ func TestEventWithoutRunIDIsRefusedOnTheSchema(t *testing.T) {
 	if got := testEnv().eventsProblem([]Event{ev}, "conf-ab12cd-04"); !strings.Contains(got, "breaks mocks.event/v1") {
 		t.Fatalf("problem %q, want a schema refusal", got)
 	}
+}
+
+func testEnvWith(evs ...Event) (*env, int) {
+	e := testEnv()
+	e.opts.EventWait = 50 * time.Millisecond
+	e.events = newEventStore()
+	mark := e.events.mark()
+	for _, ev := range evs {
+		e.events.add(ev)
+	}
+	return e, mark
+}
+
+// Negative control (law #27): a late event of an earlier scope is not this call's event.
+// The wait must not end on it, and an invalid event of this run after it must fail.
+func TestCallProblemWaitsForThisRunsEvents(t *testing.T) {
+	this, previous := "conf-ab12cd-04", "conf-ab12cd-03"
+	noRunID := testEvent("request.received", this)
+	delete(noRunID.Raw, "run_id")
+	rr, rs := []string{"request.received"}, []string{"response.sent"}
+	both := []string{"request.received", "response.sent"}
+	cases := []struct {
+		name  string
+		got   []Event
+		kinds []string
+		want  string // substring of the problem; "" means the call was seen and is valid
+	}{
+		{"a valid late request.received of the previous scope alone", []Event{testEvent("request.received", previous)}, rr, "no request.received event arrived"},
+		{"a valid late one, then an invalid one of this run", []Event{testEvent("request.received", previous), invalidKind("request.received", this)}, rr, "breaks mocks.event/v1"},
+		{"a late response.sent of the previous scope alone", []Event{testEvent("response.sent", previous)}, rs, "no response.sent event arrived"},
+		{"this run's request.received without its response.sent", []Event{testEvent("request.received", this)}, both, "no request.received and response.sent event arrived"},
+		{"both events of this run, valid", []Event{testEvent("request.received", this), testEvent("response.sent", this)}, both, ""},
+		{"both of this run beside a late valid one of the previous scope", []Event{testEvent("scope.closed", previous), testEvent("request.received", this), testEvent("response.sent", this)}, both, ""},
+		{"an event that lost its run_id ends the wait and is reported on its schema", []Event{noRunID}, rr, "breaks mocks.event/v1"},
+		{"an invalid response.sent of this run", []Event{testEvent("request.received", this), invalidKind("response.sent", this)}, both, "breaks mocks.event/v1"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, mark := testEnvWith(c.got...)
+			got := e.callProblem(mark, this, c.kinds...)
+			if c.want == "" && got != "" {
+				t.Fatalf("problem %q, want none", got)
+			}
+			if c.want != "" && !strings.Contains(got, c.want) {
+				t.Fatalf("problem %q, want it to contain %q", got, c.want)
+			}
+		})
+	}
+}
+
+// invalidKind is a valid event of kind with one field broken: direction is not in its enum.
+func invalidKind(kind, runID string) Event {
+	ev := testEvent(kind, runID)
+	ev.Raw["direction"] = "sideways"
+	return ev
 }

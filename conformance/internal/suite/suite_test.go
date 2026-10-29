@@ -124,6 +124,7 @@ func mutantCases() []mutantCase {
 		{nullmock.MutantMergesDuplicateScope, h, suite.ExitFail, "scope-rejects-duplicate/http"},
 		{nullmock.MutantAcceptsUnsupportedProto, h, suite.ExitFail, "scope-rejects-unsupported-protocol"},
 		{nullmock.MutantEventMissingRunID, h, suite.ExitFail, "event-valid/http"},
+		{nullmock.MutantResponseSentInvalid, h, suite.ExitFail, "event-valid/http"},
 		{nullmock.MutantNoScopeClosedEvent, h, suite.ExitFail, "scope-lifecycle-events/http"},
 		{nullmock.MutantTraceparentIgnored, h, suite.ExitFail, "correlation-traceparent/http"},
 		{nullmock.MutantGeneratedLabelledHeader, h, suite.ExitFail, "correlation-generated/http"},

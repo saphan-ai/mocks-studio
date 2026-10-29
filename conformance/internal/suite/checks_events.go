@@ -57,6 +57,16 @@ func isKind(kind, runID string) func(Event) bool {
 	}
 }
 
+// isCallEvent matches an event of kind that is this run's, or that lost its run_id: the
+// latter must end the wait so it is reported on its schema, not mistaken for no event.
+// A late event of an earlier scope is neither, and never ends a wait.
+func isCallEvent(kind, runID string) func(Event) bool {
+	return func(ev Event) bool {
+		r := ev.str("run_id")
+		return ev.str("kind") == kind && (r == runID || r == "")
+	}
+}
+
 func anyEvent(evs []Event, match func(Event) bool) (Event, bool) {
 	for _, ev := range evs {
 		if match(ev) {
@@ -76,6 +86,23 @@ func (e *env) await(mark int, match func(Event) bool) (Event, []Event, bool) {
 	return ev, got, ok
 }
 
+// callProblem waits for every kind of event the call on runID must have produced and
+// judges what arrived; "" means the call's events were seen and are valid.
+func (e *env) callProblem(mark int, runID string, kinds ...string) string {
+	got, ok := e.events.waitFor(mark, e.opts.EventWait, func(evs []Event) bool {
+		for _, kind := range kinds {
+			if _, hit := anyEvent(evs, isCallEvent(kind, runID)); !hit {
+				return false
+			}
+		}
+		return true
+	})
+	if !ok {
+		return fmt.Sprintf("no %s event arrived on /_mock/v1/events within %s of a call on the listener", strings.Join(kinds, " and "), e.opts.EventWait)
+	}
+	return e.eventsProblem(got, runID)
+}
+
 func (e *env) checkEventValid(protocol string) outcome {
 	h, done, bad := e.openScoped(protocol)
 	if bad != nil {
@@ -86,28 +113,22 @@ func (e *env) checkEventValid(protocol string) outcome {
 	if p := e.probe(h, probeOpts{}); p.err != nil {
 		return fail("the probe on %s got no answer: %v", h.addr(), p.err)
 	}
-	// The call's event is matched by kind alone: an event that lost its run_id must be
-	// reported on its schema, not mistaken for no event at all.
-	_, got, ok := e.await(mark, isKind("request.received", ""))
-	if !ok {
-		return fail("no request.received event arrived on /_mock/v1/events within %s of a call on the listener", e.opts.EventWait)
-	}
-	if problem := e.eventsProblem(got, h.runID); problem != "" {
+	if problem := e.callProblem(mark, h.runID, "request.received", "response.sent"); problem != "" {
 		return fail("%s", problem)
 	}
-	return pass("%d event(s) after the call validate against mocks.event/v1 and carry run_id %s", len(got), h.runID)
+	return pass("the call's request.received and response.sent validate against mocks.event/v1 and carry run_id %s", h.runID)
 }
 
-// eventsProblem judges the events seen after a call on runID's listener. A late event of
-// a scope this suite opened earlier (the previous scope's scope.closed) is held to its own
-// run, not to this one; any other run_id, and every event's schema, is judged against runID.
+// eventsProblem judges the events seen after a call on runID's listener: every event of
+// runID, and every event with no run_id or one the suite never opened. A late event of
+// another scope this suite opened (the previous scope's scope.closed) is left to the check
+// of that event's own kind, and never stands in for this call's events.
 func (e *env) eventsProblem(got []Event, runID string) string {
 	for _, ev := range got {
-		want := runID
 		if r := ev.str("run_id"); r != runID && e.ownRun(r) {
-			want = r
+			continue
 		}
-		if problem := e.eventProblem(ev, want); problem != "" {
+		if problem := e.eventProblem(ev, runID); problem != "" {
 			return problem
 		}
 	}
@@ -125,9 +146,14 @@ func (e *env) checkLifecycleEvents(protocol string) outcome {
 	if h == nil {
 		return fail("a scope could not be opened for the check: %s", describeReply(r))
 	}
-	if _, _, ok := e.await(mark, isKind("scope.opened", h.runID)); !ok {
+	opened, _, ok := e.await(mark, isKind("scope.opened", h.runID))
+	if !ok {
 		e.closeScope(h)
 		return fail("no scope.opened event for run %s arrived within %s of opening it", h.runID, e.opts.EventWait)
+	}
+	if problem := e.eventProblem(opened, h.runID); problem != "" {
+		e.closeScope(h)
+		return fail("%s", problem)
 	}
 	mark = e.events.mark()
 	e.closeScope(h)
@@ -163,6 +189,9 @@ func (e *env) checkCorrelationTraceparent(protocol string) outcome {
 	if !ok {
 		return fail("no request.received event for run %s arrived within %s", h.runID, e.opts.EventWait)
 	}
+	if problem := e.eventProblem(ev, h.runID); problem != "" {
+		return fail("%s", problem)
+	}
 	if ev.str("correlation_id") != traceID || ev.str("correlation_source") != "traceparent" {
 		return fail("a call with traceparent trace-id %s produced correlation_id %q with correlation_source %q, want that trace-id and traceparent", traceID, ev.str("correlation_id"), ev.str("correlation_source"))
 	}
@@ -184,6 +213,9 @@ func (e *env) checkCorrelationGenerated(protocol string) outcome {
 		ev, _, ok := e.await(mark, isKind("request.received", h.runID))
 		if !ok {
 			return fail("no request.received event for run %s arrived within %s", h.runID, e.opts.EventWait)
+		}
+		if problem := e.eventProblem(ev, h.runID); problem != "" {
+			return fail("%s", problem)
 		}
 		id := ev.str("correlation_id")
 		if ev.str("correlation_source") != "generated" || !traceIDPattern.MatchString(id) || id == strings.Repeat("0", 32) {
@@ -215,6 +247,9 @@ func (e *env) checkScopeMismatch(protocol string) outcome {
 	ev, _, ok := e.await(mark, isKind("scope.mismatch", h.runID))
 	if !ok {
 		return fail("a call on run %s carrying baggage mocks.run=%s produced no scope.mismatch event under run %s within %s", h.runID, other, h.runID, e.opts.EventWait)
+	}
+	if problem := e.eventProblem(ev, h.runID); problem != "" {
+		return fail("%s", problem)
 	}
 	if !strings.Contains(ev.Line, other) {
 		return fail("the scope.mismatch event does not name the other run %s: %s", other, truncate(ev.Line, 200))
@@ -332,9 +367,12 @@ func (e *env) checkPayloadSafeFields(protocol string) outcome {
 	if p := e.probe(h, opts); p.err != nil {
 		return fail("the probe on %s got no answer: %v", h.addr(), p.err)
 	}
-	_, got, ok := e.await(mark, isKind("response.sent", ""))
+	sent, got, ok := e.await(mark, isCallEvent("response.sent", h.runID))
 	if !ok {
-		return fail("no response.sent event arrived within %s of the probe", e.opts.EventWait)
+		return fail("no response.sent event for run %s arrived within %s of the probe", h.runID, e.opts.EventWait)
+	}
+	if problem := e.eventProblem(sent, h.runID); problem != "" {
+		return fail("%s", problem)
 	}
 	for _, ev := range got {
 		if problem := e.payloadProblem(ev); problem != "" {
@@ -377,9 +415,12 @@ func (e *env) checkNoCredentialInEvent(protocol string) outcome {
 	if p := e.probe(h, probeOpts{headers: headers}); p.err != nil {
 		return fail("the probe on %s got no answer: %v", h.addr(), p.err)
 	}
-	_, got, ok := e.await(mark, isKind("response.sent", ""))
+	sent, got, ok := e.await(mark, isCallEvent("response.sent", h.runID))
 	if !ok {
-		return fail("no response.sent event arrived within %s of the probe", e.opts.EventWait)
+		return fail("no response.sent event for run %s arrived within %s of the probe", h.runID, e.opts.EventWait)
+	}
+	if problem := e.eventProblem(sent, h.runID); problem != "" {
+		return fail("%s", problem)
 	}
 	for _, ev := range got {
 		if strings.Contains(ev.Line, token) {

@@ -211,7 +211,11 @@ func (s *scope) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if status != http.StatusOK {
 		out["outcome"], out["fault"] = "fault", "status_code"
 	}
-	s.m.publish(s.runID, "response.sent", "outbound", "http", fmt.Sprintf("response %d", status), out)
+	direction := "outbound"
+	if s.m.isMutant(MutantResponseSentInvalid) {
+		direction = "sideways"
+	}
+	s.m.publish(s.runID, "response.sent", direction, "http", fmt.Sprintf("response %d", status), out)
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, "ok\n") // the client hanging up is not the fixture's problem
 }
