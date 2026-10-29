@@ -92,12 +92,31 @@ func (e *env) checkEventValid(protocol string) outcome {
 	if !ok {
 		return fail("no request.received event arrived on /_mock/v1/events within %s of a call on the listener", e.opts.EventWait)
 	}
-	for _, ev := range got {
-		if problem := e.eventProblem(ev, h.runID); problem != "" {
-			return fail("%s", problem)
-		}
+	if problem := e.eventsProblem(got, h.runID); problem != "" {
+		return fail("%s", problem)
 	}
 	return pass("%d event(s) after the call validate against mocks.event/v1 and carry run_id %s", len(got), h.runID)
+}
+
+// eventsProblem judges the events seen after a call on runID's listener. A late event of
+// a scope this suite opened earlier (the previous scope's scope.closed) is held to its own
+// run, not to this one; any other run_id, and every event's schema, is judged against runID.
+func (e *env) eventsProblem(got []Event, runID string) string {
+	for _, ev := range got {
+		want := runID
+		if r := ev.str("run_id"); r != runID && e.ownRun(r) {
+			want = r
+		}
+		if problem := e.eventProblem(ev, want); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+// ownRun reports whether runID names a scope this suite opened (newRunID's prefix).
+func (e *env) ownRun(runID string) bool {
+	return strings.HasPrefix(runID, "conf-"+e.nonce+"-")
 }
 
 func (e *env) checkLifecycleEvents(protocol string) outcome {
