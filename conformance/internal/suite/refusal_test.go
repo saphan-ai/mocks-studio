@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"example.com/mocks-studio/conformance/internal/suite"
-	"example.com/mocks-studio/conformance/testdata/nullmock"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/suite"
+	"github.com/saphan-ai/mocks-studio/conformance/testdata/nullmock"
 )
 
 // unusedControl is a control URL with nothing behind it: port 1 is never assigned to a

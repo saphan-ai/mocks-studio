@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"example.com/mocks-studio/conformance/internal/schemas"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/schemas"
 )
 
 // Run checks one mock and returns the runner's exit code.

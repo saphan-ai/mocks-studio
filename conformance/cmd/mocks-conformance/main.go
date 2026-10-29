@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 
-	"example.com/mocks-studio/conformance/internal/suite"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/suite"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"example.com/mocks-studio/conformance/internal/schemas"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/schemas"
 )
 
 func (e *env) checkScopeOpens(protocol string) outcome {

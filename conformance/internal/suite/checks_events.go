@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"example.com/mocks-studio/conformance/internal/schemas"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/schemas"
 )
 
 var vocabularyKinds = []string{

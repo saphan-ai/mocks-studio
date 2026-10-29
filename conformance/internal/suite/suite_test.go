@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"example.com/mocks-studio/conformance/internal/suite"
-	"example.com/mocks-studio/conformance/testdata/nullmock"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/suite"
+	"github.com/saphan-ai/mocks-studio/conformance/testdata/nullmock"
 )
 
 const (
