@@ -318,7 +318,6 @@ exceed) is a `SKIP` with its reason.
 
 ### A note for implementers whose regular-expression engine is not ECMAScript
 
-`mocks-event-v1.schema.json` writes the non-zero trace-id rule as a negative lookahead
-(`^(?!0{32})[0-9a-f]{32}$`), which RE2-family engines (Go, Rust's `regex`, …) do not support. The published file
-is unchanged; such an engine should read the rule as `^[0-9a-f]{32}$` together with a `not` of `^0{32}$`. The
-suite does exactly that and proves the equivalence on the examples.
+`mocks-event-v1.schema.json` uses only RE2-clean regular expressions: the trace-id rule is `^[0-9a-f]{32}$`
+together with a `not` of the constant of 32 zeros, so an RE2-family engine (Go, Rust's `regex`, …) compiles the
+published file as it is.
