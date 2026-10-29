@@ -1,5 +1,5 @@
 {
-  "description": "Appendix B of the W0 ADR draft (train mock-studio, 2026-10-29). Each invalid example mutates exactly one field of valid[0] and names it (law #27). W1's conformance suite runs every entry against W0_mocks-event-v1.schema.json.",
+  "description": "Appendix B of the W0 ADR draft (train mock-studio, 2026-10-29). Each invalid example mutates exactly one field of valid[0] and names it (law #27). W1's conformance suite runs every entry against Appendix A (published as spec/ecosystem-v1/mocks-event-v1.schema.json).",
   "valid": [
     {
       "schema": "mocks.event/v1",

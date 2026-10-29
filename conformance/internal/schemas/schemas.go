@@ -46,33 +46,12 @@ var (
 	initErr  error
 )
 
-// Appendix A writes the non-zero trace-id rule as a negative lookahead, which RE2
-// (Go's regexp engine, and the one this validator uses) does not support. The
-// loader swaps that one property definition for its exact equivalent: the same
-// 32-hex pattern, plus a `not` forbidding 32 zeros. The embedded bytes stay the
-// published ones; TestEventSchemaRE2EquivalentRefusesAllZeroTraceID proves the
-// swap keeps the all-zero refusal.
-const (
-	lookaheadCorrelationID = `"pattern": "^(?!0{32})[0-9a-f]{32}$" }`
-	re2CorrelationID       = `"pattern": "^[0-9a-f]{32}$", "not": { "pattern": "^0{32}$" } }`
-)
-
-func eventSchemaRE2() ([]byte, error) {
-	if !bytes.Contains(eventSchema, []byte(lookaheadCorrelationID)) {
-		return nil, fmt.Errorf("the event schema no longer carries the lookahead correlation_id pattern this loader rewrites; update the loader")
-	}
-	return bytes.Replace(eventSchema, []byte(lookaheadCorrelationID), []byte(re2CorrelationID), 1), nil
-}
-
 func compileAll() {
 	c := jsonschema.NewCompiler()
 	c.Draft = jsonschema.Draft2020
-	event, err := eventSchemaRE2()
-	if err != nil {
-		initErr = err
-		return
-	}
-	sources := map[string][]byte{EventID: event, ManifestID: manifestSchema, RefusalID: refusalSchema}
+	// The published bytes compile as they are: Appendix A states the non-zero trace-id rule
+	// as a 32-hex pattern plus `not` const all-zero, which RE2 accepts (W0 amended 2026-10-29).
+	sources := map[string][]byte{EventID: eventSchema, ManifestID: manifestSchema, RefusalID: refusalSchema}
 	for id, raw := range sources {
 		if err := c.AddResource(id, bytes.NewReader(raw)); err != nil {
 			initErr = fmt.Errorf("embedded schema %s does not load: %w", id, err)

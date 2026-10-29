@@ -125,7 +125,7 @@ paths:
               additionalProperties: false
               required: [correlation_id, keys]
               properties:
-                correlation_id: { type: string, pattern: '^(?!0{32})[0-9a-f]{32}$' }
+                correlation_id: { type: string, pattern: '^[0-9a-f]{32}$', not: { const: '00000000000000000000000000000000' } }
                 step_id: { type: string }
                 keys: { type: object, additionalProperties: { type: string } }
       responses:
@@ -178,7 +178,7 @@ components:
         reason_code:
           type: string
           description: Public contract key.
-          examples: [run-id-invalid, run-already-open, run-attached, run-unknown, run-credential-missing, run-credential-invalid, mock-unknown, setting-unknown, setting-out-of-range, event-schema-unknown]
+          examples: [run-id-invalid, run-already-open, run-attached, run-unknown, run-credential-missing, run-credential-invalid, mock-unknown, setting-unknown, setting-out-of-range, setting-type-invalid, listener-protocol-unsupported, listener-unavailable, event-schema-unknown]
         allowed: { type: array, items: { type: string } }
   responses:
     Refused:

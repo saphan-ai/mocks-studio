@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"example.com/mocks-studio/conformance/internal/schemas"
+	"github.com/saphan-ai/mocks-studio/conformance/internal/schemas"
 )
 
 // specRoot is the repository's spec directory, relative to this package.
@@ -103,9 +103,10 @@ func TestEcosystemExamplesAgainstEventSchema(t *testing.T) {
 	}
 }
 
-// The loader's RE2 rewrite of the non-zero trace-id rule keeps its meaning: a
-// non-zero id passes, all zeros and a 31-character id are refused on correlation_id.
-func TestEventSchemaRE2EquivalentRefusesAllZeroTraceID(t *testing.T) {
+// The published non-zero trace-id rule (32-hex pattern plus `not` const all-zero) compiles
+// under RE2 and keeps its meaning: a non-zero id passes; all zeros, a 31-character id,
+// upper case and a non-hex character are refused on correlation_id.
+func TestEventSchemaRefusesAllZeroTraceID(t *testing.T) {
 	var ex examples
 	if err := json.Unmarshal(readSpec(t, "ecosystem-v1/mocks-event-v1.examples.json"), &ex); err != nil {
 		t.Fatal(err)

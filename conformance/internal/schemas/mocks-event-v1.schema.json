@@ -13,7 +13,7 @@
     "run_id": { "$ref": "#/$defs/run_id" },
     "test_run_id": { "$ref": "#/$defs/run_id" },
     "step_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "correlation_id": { "type": "string", "pattern": "^(?!0{32})[0-9a-f]{32}$" },
+    "correlation_id": { "type": "string", "pattern": "^[0-9a-f]{32}$", "not": { "const": "00000000000000000000000000000000" } },
     "correlation_source": { "enum": ["traceparent", "correlation-key", "generated"] },
     "correlation_keys": {
       "type": "object",
