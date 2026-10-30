@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
@@ -56,6 +57,9 @@ type Operation struct {
 
 	Responses []*Response
 	doc       *Document
+
+	success       sync.Once
+	successAnswer Answer
 }
 
 // Param is a path, query, header or cookie parameter.

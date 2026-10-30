@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -21,7 +22,37 @@ const (
 	RuleJSON        = "json"
 	RuleContentType = "content-type"
 	RuleSchema      = "schema"
+	RuleMaxDepth    = "maxDepth"
 )
+
+// MaxBodyDepth is how deeply a JSON request body may nest objects and arrays. A deeper body is refused with the rule
+// maxDepth before it reaches the schema library, whose cost on a recursive schema grows much faster than the body.
+const MaxBodyDepth = 64
+
+// jsonDepth is the deepest nesting of objects and arrays in a JSON text, counted without decoding it. Text that is not
+// JSON gets a depth too; the decoder judges it afterwards.
+func jsonDepth(b []byte) int {
+	depth, deepest := 0, 0
+	inString, escaped := false, false
+	for _, c := range b {
+		switch {
+		case escaped:
+			escaped = false
+		case inString:
+			escaped = c == '\\'
+			inString = c != '"'
+		case c == '"':
+			inString = true
+		case c == '{' || c == '[':
+			if depth++; depth > deepest {
+				deepest = depth
+			}
+		case c == '}' || c == ']':
+			depth--
+		}
+	}
+	return deepest
+}
 
 // Violation is one place where a request breaks the document. It names where and which rule, never the value.
 type Violation struct {
@@ -199,10 +230,16 @@ func (op *Operation) validateBody(r Request) []Violation {
 	}
 	switch {
 	case mediaIsJSON(media.Type):
+		if jsonDepth(r.Body) > MaxBodyDepth {
+			return []Violation{{"/body", RuleMaxDepth}}
+		}
 		dec := json.NewDecoder(bytes.NewReader(r.Body))
 		dec.UseNumber()
 		var v any
-		if err := dec.Decode(&v); err != nil || dec.More() {
+		if err := dec.Decode(&v); err != nil {
+			return []Violation{{"/body", RuleJSON}}
+		}
+		if _, err := dec.Token(); err != io.EOF { // anything after the value, a stray closing bracket included
 			return []Violation{{"/body", RuleJSON}}
 		}
 		return schemaViolations(media.Schema.Validate(v), "/body")

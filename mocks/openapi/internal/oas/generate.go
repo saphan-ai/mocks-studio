@@ -13,6 +13,10 @@ const (
 	maxRefRevisits = 1 // how many times a schema may contain itself before the expansion is cut
 	maxDepth       = 12
 	maxGenLength   = 4096
+
+	// MaxGenItems caps how many items a generated array holds, whatever minItems asks for: the size of an answer is the
+	// mock's choice, not the document's. A schema that needs more must carry an example.
+	MaxGenItems = 100
 )
 
 var formatValues = map[string]string{
@@ -192,7 +196,7 @@ func (g *generator) object(m map[string]any, depth int) any {
 func (g *generator) array(m map[string]any, depth int) any {
 	n := 1
 	if v, ok := number(m["minItems"]); ok && int(v) > n {
-		n = int(v)
+		n = int(min(v, MaxGenItems))
 	}
 	if v, ok := number(m["maxItems"]); ok && int(v) < n {
 		n = int(v)
@@ -281,7 +285,13 @@ type Answer struct {
 }
 
 // SuccessAnswer answers from the operation's first 2xx response: its example, else a value generated from its schema.
+// The answer is built on the first call and kept: the document does not change while the mock serves it.
 func (op *Operation) SuccessAnswer() Answer {
+	op.success.Do(func() { op.successAnswer = op.buildSuccessAnswer() })
+	return op.successAnswer
+}
+
+func (op *Operation) buildSuccessAnswer() Answer {
 	var chosen *Response
 	for _, r := range op.Responses {
 		if r.Status == "default" || r.Code < 200 || r.Code > 299 {
