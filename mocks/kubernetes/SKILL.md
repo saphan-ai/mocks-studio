@@ -33,8 +33,9 @@ run, each with its own in-memory cluster. Two runs never share an object.
   headers are sent at once, so a watch is registered before the caller's next call.
   - no `resourceVersion` (or `0`): the current objects as `ADDED`, then changes;
   - a `resourceVersion`: every retained change after it, then changes;
-  - one that fell out of the retained window (the last 256 changes; `--retain` changes it): `410 Gone` as a `Status`
-    with reason `Expired`, the answer a real server gives for "too old resource version";
+  - one that fell out of the retained window (the last 256 changes; `--retain` changes it): the response itself is
+    `410 Gone` (a `Status` with reason `Expired`). A real API server differs here: it answers `200` and sends one `ERROR`
+    watch event carrying that `410` `Status`, so a client written against this mock must also handle the `ERROR` event;
   - with a `labelSelector`, an object entering the selection arrives as `ADDED`, leaving it as `DELETED`;
   - `timeoutSeconds` ends the stream; a watch whose client cannot keep up (256 queued events) is cut off, so it re-lists.
 - **Errors** are `Status` objects (`kind: Status`, `status: Failure`, `code`, `reason`, `details`): `400 BadRequest`,
