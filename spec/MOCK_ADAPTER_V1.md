@@ -253,7 +253,18 @@ reader should know. A check that runs per protocol carries `/<protocol>` after i
 
 Flags: `--manifest`, `--control` (overrides the manifest's `control.url`, or supplies the manifest when none is
 given), `--listen-host` (where the mock is asked to open listeners; default `127.0.0.1`), `--timeout` (bound on
-each request), `--event-wait` (how long an expected event is waited for).
+each request), `--event-wait` (how long an expected event is waited for), `--open-attempts` (default 5) and
+`--listen-ports first-last`.
+
+The suite picks the port of each listener it asks the mock to open: it finds one nothing listens on, releases it, and
+sends it in the scope request. Between the release and the mock's bind another process may take it, and the mock then
+answers `409 listener-unavailable`. When the answer is exactly that (status 409, `reason_code` `listener-unavailable`),
+the suite opens the scope again on a fresh port and the same `run_id`, up to `--open-attempts` times in all, and prints
+a `remark:` line saying so. Any other answer ends the open at once, and the check that needed the scope reports it.
+Against a mock that is conformant this only absorbs a port taken by chance. A mock that answers `409
+listener-unavailable` for a port that is free is retried as many times and then fails `scope-opens` (or the check that
+needed the scope), as before. `--listen-ports` restricts the ports the suite offers to that range (default: any free
+port); use it where only some ports are open, or to keep two suites on one host out of each other's way.
 
 **The checks**
 

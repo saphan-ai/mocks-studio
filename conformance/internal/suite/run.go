@@ -31,6 +31,9 @@ func withDefaults(o Options) Options {
 	if o.RequestTimeout <= 0 {
 		o.RequestTimeout = DefaultRequestTimeout
 	}
+	if o.OpenAttempts <= 0 {
+		o.OpenAttempts = DefaultOpenAttempts
+	}
 	if o.EventWait <= 0 {
 		o.EventWait = DefaultEventWait
 	}

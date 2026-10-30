@@ -122,10 +122,16 @@ func (e *env) checkEventValid(protocol string) outcome {
 // eventsProblem judges the events seen after a call on runID's listener: every event of
 // runID, and every event with no run_id or one the suite never opened. A late event of
 // another scope this suite opened (the previous scope's scope.closed) is left to the check
-// of that event's own kind, and never stands in for this call's events.
+// of that event's own kind, and never stands in for this call's events. The scope.opened of
+// runID itself is left to scope-lifecycle-events too: it is emitted when the scope opens, and
+// whether it reaches the stream before or after the call's mark is a matter of timing, so
+// judging it here would make which check fails depend on that timing.
 func (e *env) eventsProblem(got []Event, runID string) string {
 	for _, ev := range got {
 		if r := ev.str("run_id"); r != runID && e.ownRun(r) {
+			continue
+		}
+		if ev.str("kind") == "scope.opened" && ev.str("run_id") == runID {
 			continue
 		}
 		if problem := e.eventProblem(ev, runID); problem != "" {

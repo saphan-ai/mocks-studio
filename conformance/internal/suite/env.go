@@ -27,6 +27,7 @@ const (
 	DefaultRequestTimeout = 5 * time.Second
 	DefaultEventWait      = 3 * time.Second
 	DefaultListenHost     = "127.0.0.1"
+	DefaultOpenAttempts   = 5
 	maxResponseBytes      = 1 << 20
 )
 
@@ -37,6 +38,9 @@ type Options struct {
 	ListenHost     string        // host the suite asks the mock to open listeners on
 	RequestTimeout time.Duration // bound on every request the suite makes
 	EventWait      time.Duration // how long the suite waits for an event it expects
+	OpenAttempts   int           // tries to open a scope while the mock answers 409 listener-unavailable; each try uses a fresh port
+	PortMin        int           // with PortMax: the ports the suite offers the mock, instead of any free port; 0 means any
+	PortMax        int
 	Out            io.Writer
 }
 
@@ -52,6 +56,7 @@ type env struct {
 	rep      *report
 	nonce    string
 	runs     int
+	portNext int // offset in the port range where the next search starts
 }
 
 func newEnv(ctx context.Context, o Options, rep *report) *env {
@@ -125,8 +130,27 @@ func (e *env) newRunID() string {
 	return fmt.Sprintf("conf-%s-%02d", e.nonce, e.runs)
 }
 
+// freePort finds a port nothing listens on, in the configured range or anywhere. The port
+// is released before the mock is asked to bind it, so another process may take it in
+// between: open retries on the mock's listener-unavailable.
 func (e *env) freePort() (int, error) {
-	ln, err := net.Listen("tcp", net.JoinHostPort(e.opts.ListenHost, "0"))
+	if e.opts.PortMin == 0 {
+		return e.bindProbe(0)
+	}
+	size := e.opts.PortMax - e.opts.PortMin + 1
+	for i := 0; i < size; i++ {
+		off := (e.portNext + i) % size
+		if port, err := e.bindProbe(e.opts.PortMin + off); err == nil {
+			e.portNext = off + 1
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no port in %d-%d could be bound", e.opts.PortMin, e.opts.PortMax)
+}
+
+// bindProbe listens on port (0: any) and releases it, returning the port bound.
+func (e *env) bindProbe(port int) (int, error) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(e.opts.ListenHost, fmt.Sprint(port)))
 	if err != nil {
 		return 0, err
 	}
@@ -138,18 +162,40 @@ func (e *env) openRequest(runID, protocol string, port int) map[string]any {
 	return map[string]any{"run_id": runID, "listener": map[string]any{"protocol": protocol, "host": e.opts.ListenHost, "port": port}}
 }
 
-// open opens a scope on a fresh run id and a free port.
+// open opens a scope on a fresh run id and a free port. A 409 listener-unavailable means
+// the port was taken between the suite's choice and the mock's bind, so the open is
+// tried again, up to OpenAttempts times, on a fresh port and the same run id (no scope
+// exists after a refused open). Any other answer ends the open at once.
 func (e *env) open(protocol string) (*scopeHandle, reply) {
-	port, err := e.freePort()
-	if err != nil {
-		return nil, reply{err: err}
+	runID := e.newRunID()
+	var r reply
+	for attempt := 1; attempt <= e.opts.OpenAttempts; attempt++ {
+		port, err := e.freePort()
+		if err != nil {
+			return nil, reply{err: err}
+		}
+		h := &scopeHandle{runID: runID, protocol: protocol, host: e.opts.ListenHost, port: port}
+		r = e.call(http.MethodPost, controlBase+"/scopes", e.openRequest(runID, protocol, port))
+		if r.err == nil && r.status == http.StatusCreated {
+			if attempt > 1 {
+				e.rep.remark(fmt.Sprintf("scope %s opened on attempt %d: the mock answered listener-unavailable for the port the suite chose, so the suite tried a fresh one (--open-attempts)", runID, attempt))
+			}
+			return h, r
+		}
+		if !listenerUnavailable(r) {
+			break
+		}
 	}
-	h := &scopeHandle{runID: e.newRunID(), protocol: protocol, host: e.opts.ListenHost, port: port}
-	r := e.call(http.MethodPost, controlBase+"/scopes", e.openRequest(h.runID, protocol, port))
-	if r.err != nil || r.status != http.StatusCreated {
-		return nil, r
+	return nil, r
+}
+
+// listenerUnavailable reports whether r is the 409 listener-unavailable refusal.
+func listenerUnavailable(r reply) bool {
+	if r.err != nil || r.status != http.StatusConflict {
+		return false
 	}
-	return h, r
+	doc, ok := r.json()
+	return ok && doc["reason_code"] == "listener-unavailable"
 }
 
 // closeScope removes a scope; a failure is reported as a remark, never swallowed.

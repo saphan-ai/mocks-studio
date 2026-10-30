@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +21,22 @@ const (
 	testEventWait = 800 * time.Millisecond
 	testTimeout   = 3 * time.Second
 )
+
+// Suites run in parallel in one process, and the kernel hands the same just-released port
+// to two of them; each gets a block of ports of its own instead, below the ephemeral range.
+const (
+	portBlockSize  = 64
+	portBlockCount = 150
+	portBase       = 20000
+)
+
+var portBlocks atomic.Int64
+
+func nextPortBlock() (lo, hi int) {
+	n := int(portBlocks.Add(1)-1) + os.Getpid()*7
+	lo = portBase + (n%portBlockCount)*portBlockSize
+	return lo, lo + portBlockSize - 1
+}
 
 var lineRe = regexp.MustCompile(`^(PASS|FAIL|SKIP) (\S+) — (.*)$`)
 
@@ -58,6 +76,9 @@ func runSuite(t *testing.T, o suite.Options) result {
 	t.Helper()
 	var out bytes.Buffer
 	o.Out = &out
+	if o.PortMin == 0 {
+		o.PortMin, o.PortMax = nextPortBlock()
+	}
 	o.EventWait = testEventWait
 	o.RequestTimeout = testTimeout
 	code := suite.Run(context.Background(), o)
@@ -125,6 +146,15 @@ func mutantCases() []mutantCase {
 		{nullmock.MutantAcceptsUnsupportedProto, h, suite.ExitFail, "scope-rejects-unsupported-protocol"},
 		{nullmock.MutantEventMissingRunID, h, suite.ExitFail, "event-valid/http"},
 		{nullmock.MutantResponseSentInvalid, h, suite.ExitFail, "event-valid/http"},
+		// Held back past the answer: only event-valid waiting for response.sent by name sees it.
+		{nullmock.MutantResponseSentLate, h, suite.ExitFail, "event-valid/http"},
+		// Each breaks the one event one check validates, and no event any other check judges.
+		{nullmock.MutantScopeOpenedInvalid, h, suite.ExitFail, "scope-lifecycle-events/http"},
+		{nullmock.MutantTraceparentEventInvalid, h, suite.ExitFail, "correlation-traceparent/http"},
+		{nullmock.MutantSecondRequestInvalid, h, suite.ExitFail, "correlation-generated/http"},
+		{nullmock.MutantScopeMismatchInvalid, h, suite.ExitFail, "scope-mismatch-recorded/http"},
+		{nullmock.MutantMarkedResponseInvalid, h, suite.ExitFail, "payload-safe-fields-only/http"},
+		{nullmock.MutantCredentialedResponseInvalid, h, suite.ExitFail, "no-credential-in-event/http"},
 		{nullmock.MutantNoScopeClosedEvent, h, suite.ExitFail, "scope-lifecycle-events/http"},
 		{nullmock.MutantTraceparentIgnored, h, suite.ExitFail, "correlation-traceparent/http"},
 		{nullmock.MutantGeneratedLabelledHeader, h, suite.ExitFail, "correlation-generated/http"},
@@ -162,6 +192,67 @@ func TestEachMutantFailsExactlyItsCheck(t *testing.T) {
 				t.Errorf("failed checks %v, want exactly [%s]\n%s", fails, c.wantFail, r.out)
 			}
 		})
+	}
+}
+
+// startWith runs the suite against a fixture started with cfg.
+func startWith(t *testing.T, cfg nullmock.Config, o suite.Options) result {
+	t.Helper()
+	cfg.ControlAddr = "127.0.0.1:0"
+	m, err := nullmock.Start(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	o.ManifestPath = filepath.Join(t.TempDir(), "mocks.manifest.json")
+	if err := os.WriteFile(o.ManifestPath, m.FileManifest(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return runSuite(t, o)
+}
+
+// A port taken between the suite's choice and the mock's bind is the mock's 409
+// listener-unavailable; the suite opens the scope again on a fresh port, and says so.
+// The control mutates exactly one field: the number of attempts the suite may make.
+func TestOpenRetriesOnListenerUnavailable(t *testing.T) {
+	cfg := nullmock.Config{Mode: nullmock.ModeHTTP, RefuseOpens: 2}
+	r := startWith(t, cfg, suite.Options{})
+	if r.code != suite.ExitPass {
+		t.Fatalf("with the default attempts: exit %d, want 0\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.out, "remark: scope ") || !strings.Contains(r.out, "opened on attempt 3") {
+		t.Errorf("a retried open must be remarked with its attempt number:\n%s", r.out)
+	}
+	r = startWith(t, cfg, suite.Options{OpenAttempts: 2})
+	if r.code != suite.ExitFail || r.checks["scope-opens/http"] != "FAIL" {
+		t.Errorf("with 2 attempts against 2 refusals: exit %d, checks %v, want exit 1 with scope-opens/http FAIL\n%s", r.code, r.checks, r.out)
+	}
+}
+
+var listenerRe = regexp.MustCompile(`listener 127\.0\.0\.1:(\d+) answered`)
+
+// With a port range the mock is offered no port outside it.
+func TestListenPortsRangeIsHonoured(t *testing.T) {
+	lo, hi := nextPortBlock()
+	r := startWith(t, nullmock.Config{Mode: nullmock.ModeHTTP}, suite.Options{PortMin: lo, PortMax: hi})
+	if r.code != suite.ExitPass {
+		t.Fatalf("exit %d, want 0\n%s", r.code, r.out)
+	}
+	m := listenerRe.FindStringSubmatch(r.out)
+	if m == nil {
+		t.Fatalf("no listener-answers line in:\n%s", r.out)
+	}
+	if port, _ := strconv.Atoi(m[1]); port < lo || port > hi {
+		t.Errorf("the listener was offered port %d, outside %d-%d", port, lo, hi)
+	}
+}
+
+func TestListenPortsFlagRefusesABadRange(t *testing.T) {
+	for _, bad := range []string{"9-1", "x", "0-5", "1-70000"} {
+		var out, errb bytes.Buffer
+		if code := suite.Main(context.Background(), []string{"--listen-ports", bad, "--control", "http://127.0.0.1:1"}, &out, &errb); code != suite.ExitRefused {
+			t.Errorf("--listen-ports %s: exit %d, want 2\n%s%s", bad, code, out.String(), errb.String())
+		}
 	}
 }
 

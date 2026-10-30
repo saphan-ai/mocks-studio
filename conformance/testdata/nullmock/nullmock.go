@@ -59,7 +59,24 @@ const (
 	MutantCredentialInSummary      = "credential-in-summary"
 	MutantListenerStaysOpen        = "listener-stays-open"
 	MutantResponseSentInvalid      = "response-sent-invalid"
+	// MutantResponseSentLate emits an invalid response.sent 100 ms after the call has been
+	// answered, so only a check that waits for it by name sees it.
+	MutantResponseSentLate = "response-sent-late-invalid"
+	// Each of the next five breaks the direction of one event, and only for the call the one
+	// check that validates it makes: the scope.opened, the scope.mismatch, the request.received of
+	// a call with a traceparent, the request.received of a scope's second call, the
+	// response.sent of a call with the suite's marker header, and that of a call with an
+	// Authorization header.
+	MutantScopeOpenedInvalid          = "scope-opened-invalid"
+	MutantScopeMismatchInvalid        = "scope-mismatch-invalid"
+	MutantTraceparentEventInvalid     = "traceparent-event-invalid"
+	MutantSecondRequestInvalid        = "second-request-invalid"
+	MutantMarkedResponseInvalid       = "marked-response-invalid"
+	MutantCredentialedResponseInvalid = "credentialed-response-invalid"
 )
+
+// responseSentLateDelay is how long MutantResponseSentLate holds its response.sent back.
+const responseSentLateDelay = 100 * time.Millisecond
 
 const (
 	contractV1  = "mocks.adapter/v1"
@@ -76,6 +93,7 @@ type Config struct {
 	Mode        string // ModeHTTP or ModeTCP
 	Mutant      string // one of the Mutant constants
 	ControlAddr string // listen address of the control endpoint, e.g. "127.0.0.1:0"
+	RefuseOpens int    // refuse the first n scope opens with 409 listener-unavailable, as a taken port does
 }
 
 // Mock is a running fixture.
@@ -90,6 +108,7 @@ type Mock struct {
 	order  []string // run ids in the order they were opened
 	subs   map[*subscriber]struct{}
 	seq    int
+	opens  int // scope opens attempted, for Config.RefuseOpens
 }
 
 type subscriber struct {

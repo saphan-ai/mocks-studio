@@ -38,6 +38,9 @@ func Main(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.ListenHost, "listen-host", DefaultListenHost, "host the suite asks the mock to open listeners on")
 	fs.DurationVar(&o.RequestTimeout, "timeout", DefaultRequestTimeout, "bound on every request the suite makes")
 	fs.DurationVar(&o.EventWait, "event-wait", DefaultEventWait, "how long the suite waits for an event it expects")
+	fs.IntVar(&o.OpenAttempts, "open-attempts", DefaultOpenAttempts, "tries to open a scope while the mock answers 409 listener-unavailable (the port the suite chose was taken); each try uses a fresh port")
+	var ports string
+	fs.StringVar(&ports, "listen-ports", "", "first-last: offer the mock only ports in this range for its listeners (default: any free port)")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, usageText)
 		fs.PrintDefaults()
@@ -48,6 +51,24 @@ func Main(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return ExitRefused
 	}
+	if ports != "" {
+		var err error
+		if o.PortMin, o.PortMax, err = parsePortRange(ports); err != nil {
+			fmt.Fprintf(stderr, "--listen-ports %q is refused: %v; give first-last, for example 41000-41999\n", ports, err)
+			return ExitRefused
+		}
+	}
 	o.Out = stdout
 	return Run(ctx, o)
+}
+
+// parsePortRange reads "first-last" with 1 <= first <= last <= 65535.
+func parsePortRange(s string) (lo, hi int, err error) {
+	if _, err := fmt.Sscanf(s, "%d-%d", &lo, &hi); err != nil {
+		return 0, 0, errors.New("not two numbers joined by a hyphen")
+	}
+	if lo < 1 || hi > 65535 || lo > hi {
+		return 0, 0, errors.New("the range must satisfy 1 <= first <= last <= 65535")
+	}
+	return lo, hi, nil
 }

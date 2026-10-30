@@ -34,6 +34,7 @@ type scope struct {
 
 	mu       sync.Mutex
 	settings map[string]any
+	calls    int // http calls served, for MutantSecondRequestInvalid
 
 	ln    net.Listener
 	srv   *http.Server
@@ -194,7 +195,11 @@ func (s *scope) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	corr, source := s.correlation(r)
 	common := map[string]any{"correlation_id": corr, "correlation_source": source}
 	if other := baggageRun(r); other != "" && other != s.runID && !s.m.isMutant(MutantMismatchNotRecorded) {
-		s.m.publish(s.runID, "scope.mismatch", "internal", "http",
+		direction := "internal"
+		if s.m.isMutant(MutantScopeMismatchInvalid) {
+			direction = "sideways"
+		}
+		s.m.publish(s.runID, "scope.mismatch", direction, "http",
 			fmt.Sprintf("call on run %s endpoint carried baggage for run %s", s.runID, other), common)
 	}
 	summary := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
@@ -202,7 +207,16 @@ func (s *scope) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		summary += " auth=" + r.Header.Get("Authorization")
 	}
 	in := mergeExtra(common, map[string]any{"payload": s.httpPayload(r, body)})
-	s.m.publish(s.runID, "request.received", "inbound", "http", summary, in)
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	inDirection := "inbound"
+	if (s.m.isMutant(MutantTraceparentEventInvalid) && r.Header.Get("traceparent") != "") ||
+		(s.m.isMutant(MutantSecondRequestInvalid) && call == 2) {
+		inDirection = "sideways"
+	}
+	s.m.publish(s.runID, "request.received", inDirection, "http", summary, in)
 	status := http.StatusOK
 	if v, ok := s.get("status_code").(float64); ok {
 		status = int(v)
@@ -212,10 +226,20 @@ func (s *scope) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		out["outcome"], out["fault"] = "fault", "status_code"
 	}
 	direction := "outbound"
-	if s.m.isMutant(MutantResponseSentInvalid) {
+	if s.m.isMutant(MutantResponseSentInvalid) ||
+		(s.m.isMutant(MutantMarkedResponseInvalid) && r.Header.Get("X-Conformance-Marker") != "") ||
+		(s.m.isMutant(MutantCredentialedResponseInvalid) && r.Header.Get("Authorization") != "") {
 		direction = "sideways"
 	}
-	s.m.publish(s.runID, "response.sent", direction, "http", fmt.Sprintf("response %d", status), out)
+	summary = fmt.Sprintf("response %d", status)
+	if s.m.isMutant(MutantResponseSentLate) {
+		go func() {
+			time.Sleep(responseSentLateDelay)
+			s.m.publish(s.runID, "response.sent", "sideways", "http", summary, out)
+		}()
+	} else {
+		s.m.publish(s.runID, "response.sent", direction, "http", summary, out)
+	}
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, "ok\n") // the client hanging up is not the fixture's problem
 }

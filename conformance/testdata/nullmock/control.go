@@ -71,6 +71,14 @@ func (m *Mock) handleOpenScope(w http.ResponseWriter, r *http.Request) {
 		m.refuse(w, http.StatusUnprocessableEntity, "listener-protocol-unsupported", fmt.Sprintf("The listener protocol %q is not one this mock serves and was refused; use one of the allowed protocols.", req.Listener.Protocol), []string{want})
 		return
 	}
+	m.mu.Lock()
+	m.opens++
+	taken := m.opens <= m.cfg.RefuseOpens
+	m.mu.Unlock()
+	if taken {
+		m.refuse(w, http.StatusConflict, "listener-unavailable", fmt.Sprintf("The listener %s:%d could not be opened and the scope was refused (the port is taken); assign a free port.", req.Listener.Host, req.Listener.Port), nil)
+		return
+	}
 	s, status, err := m.openScope(req)
 	if err != nil {
 		code := "listener-unavailable"
@@ -80,7 +88,11 @@ func (m *Mock) handleOpenScope(w http.ResponseWriter, r *http.Request) {
 		m.refuse(w, status, code, err.Error(), nil)
 		return
 	}
-	m.publish(s.runID, "scope.opened", "internal", s.protocol, "scope opened for run "+s.runID, nil)
+	direction := "internal"
+	if m.isMutant(MutantScopeOpenedInvalid) {
+		direction = "sideways"
+	}
+	m.publish(s.runID, "scope.opened", direction, s.protocol, "scope opened for run "+s.runID, nil)
 	writeJSON(w, http.StatusCreated, map[string]any{"run_id": s.runID, "listener": s.listener})
 }
 
@@ -200,6 +212,10 @@ func (m *Mock) handleEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	// Subscribed before the headers go out: a client that has the headers may call at once,
+	// and an event published before the subscription is lost to it.
+	sub := m.subscribe(r.URL.Query().Get("run_id"))
+	defer m.unsubscribe(sub)
 	ctype := "text/event-stream"
 	if m.isMutant(MutantEventsWrongContentType) {
 		ctype = "application/json"
@@ -209,8 +225,6 @@ func (m *Mock) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, ": ready\n\n")
 	fl.Flush()
-	sub := m.subscribe(r.URL.Query().Get("run_id"))
-	defer m.unsubscribe(sub)
 	tick := time.NewTicker(sseKeepAlive)
 	defer tick.Stop()
 	for {

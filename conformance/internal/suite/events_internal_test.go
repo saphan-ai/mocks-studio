@@ -40,6 +40,8 @@ func TestEventsAfterACallAreJudgedOnTheirOwnRun(t *testing.T) {
 	}{
 		{"late scope.closed of the previous scope", []Event{testEvent("scope.closed", previous), testEvent("request.received", this)}, ""},
 		{"call event on this scope", []Event{testEvent("request.received", this)}, ""},
+		{"this scope's own scope.opened, invalid, is scope-lifecycle-events' to judge", []Event{invalidKind("scope.opened", this), testEvent("request.received", this)}, ""},
+		{"an invalid call event beside this scope's scope.opened", []Event{testEvent("scope.opened", this), invalidKind("request.received", this)}, "breaks mocks.event/v1"},
 		{"call event on a run the suite never opened", []Event{testEvent("request.received", "someone-elses-run")}, `carries run_id "someone-elses-run", want "conf-ab12cd-04"`},
 	}
 	for _, c := range cases {
