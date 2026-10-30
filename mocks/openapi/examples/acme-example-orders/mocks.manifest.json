@@ -1,0 +1,98 @@
+{
+  "contract": "mocks.adapter/v1",
+  "name": "acme-example-orders",
+  "version": "1.0.0+openapi-mock.0.1.0",
+  "description": "Acme Example Orders (mock served from its OpenAPI document)",
+  "protocols": [
+    "http"
+  ],
+  "control": {
+    "url": "http://127.0.0.1:9100"
+  },
+  "settings": [
+    {
+      "name": "status_code",
+      "description": "Answer every call that reaches an operation with this HTTP status; 0 turns it off. Values from 1 to 199 are not final statuses and act as 0.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 599,
+      "scope": "run",
+      "effect": {
+        "protocol": "http",
+        "value": 503,
+        "expect": {
+          "http_status": 503
+        }
+      }
+    },
+    {
+      "name": "delay_ms",
+      "description": "Wait this many milliseconds before answering any call; 0 turns it off.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 60000,
+      "scope": "run"
+    },
+    {
+      "name": "fail_rate",
+      "description": "The share of calls, from 0 to 1, answered 503 and recorded as fault.injected; 0 turns it off.",
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 1,
+      "scope": "run",
+      "effect": {
+        "protocol": "http",
+        "value": 1,
+        "expect": {
+          "http_status": 503
+        }
+      }
+    },
+    {
+      "name": "operation_status.list_orders",
+      "description": "Answer GET /orders (operationId listOrders) with this HTTP status; 0 turns it off. It wins over status_code.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 599,
+      "scope": "run",
+      "effect": {
+        "protocol": "http",
+        "value": 503,
+        "expect": {
+          "http_status": 503
+        }
+      }
+    },
+    {
+      "name": "operation_status.create_order",
+      "description": "Answer POST /orders (operationId createOrder) with this HTTP status; 0 turns it off. It wins over status_code.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 599,
+      "scope": "run"
+    },
+    {
+      "name": "operation_status.get_order",
+      "description": "Answer GET /orders/{orderId} (operationId getOrder) with this HTTP status; 0 turns it off. It wins over status_code.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 599,
+      "scope": "run"
+    }
+  ],
+  "safe_fields": [],
+  "conformance": {
+    "probe": {
+      "http": {
+        "method": "GET",
+        "path": "/orders"
+      }
+    }
+  }
+}
