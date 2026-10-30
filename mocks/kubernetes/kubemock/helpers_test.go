@@ -162,17 +162,20 @@ type stream struct {
 	sc   *bufio.Scanner
 }
 
-// watch opens a watch and returns once the response headers are in.
-func (s *scopeRig) watch(path string) *stream {
+// watch opens a watch on a path of the scope and returns once the response headers are in.
+func (s *scopeRig) watch(path string) *stream { return s.watchURL(s.base + path) }
+
+// watchURL opens a watch on a full URL.
+func (s *scopeRig) watchURL(url string) *stream {
 	s.t.Helper()
-	resp, err := (&http.Client{}).Get(s.base + path)
+	resp, err := (&http.Client{}).Get(url)
 	if err != nil {
-		s.t.Fatalf("watch %s: %v", path, err)
+		s.t.Fatalf("watch %s: %v", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close() // already failing
-		s.t.Fatalf("watch %s answered %d: %s", path, resp.StatusCode, b)
+		s.t.Fatalf("watch %s answered %d: %s", url, resp.StatusCode, b)
 	}
 	st := &stream{t: s.t, resp: resp, sc: bufio.NewScanner(resp.Body)}
 	s.t.Cleanup(func() { _ = resp.Body.Close() }) // a second close is harmless

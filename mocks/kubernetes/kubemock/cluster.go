@@ -412,10 +412,3 @@ func (c *cluster) close() {
 		close(w.ch)
 	}
 }
-
-// currentRV is the newest resource version, for list metadata.
-func (c *cluster) currentRV() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return strconv.FormatInt(c.rv, 10)
-}
