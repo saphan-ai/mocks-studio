@@ -12,6 +12,6 @@ A core opens one scope per run (`POST /_mock/v1/scopes`); that scope's listener 
 
 Run the conformance suite against the running mock:
 
-    go -C conformance run ./cmd/mocks-conformance --manifest mocks/kubernetes/mocks.manifest.json
+    go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/kubernetes/mocks.manifest.json
 
 Run its tests: `go -C mocks/kubernetes test -count=1 ./...`

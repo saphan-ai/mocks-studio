@@ -58,7 +58,7 @@ paging, `Terminating` namespaces, controllers (a deployment creates no pods), ad
 
 ```sh
 go -C mocks/kubernetes run ./cmd/kubernetes-mock serve --control 127.0.0.1:9100
-go -C conformance run ./cmd/mocks-conformance --manifest mocks/kubernetes/mocks.manifest.json
+go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/kubernetes/mocks.manifest.json
 ```
 
 `serve --control` prints the control URL on stdout and the request log on stderr. A core opens a scope with
