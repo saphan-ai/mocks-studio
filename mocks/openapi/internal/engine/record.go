@@ -22,7 +22,7 @@ func (s *scope) requestPayload(c *call, _ *oas.Operation) map[string]any {
 	}
 	fields := map[string]any{}
 	for _, f := range requestFields(c) {
-		if s.e.safe[f.Name] && f.value != nil {
+		if s.e.safe[f.Name] && !f.secret && f.value != nil {
 			if _, dup := fields[f.Name]; !dup {
 				fields[f.Name] = f.value
 			}
@@ -35,6 +35,7 @@ func (s *scope) requestPayload(c *call, _ *oas.Operation) map[string]any {
 type requestField struct {
 	Where, Name string
 	value       any
+	secret      bool // inside a field named like a credential: logged through the redactor, never exported
 }
 
 // requestFields lists the query parameters and the body fields of a call. Headers are never candidates for export.
@@ -73,8 +74,13 @@ func sortedNames(v url.Values) []string {
 	return names
 }
 
-// flatten lists the leaves of a JSON value with their pointers; a top-level leaf keeps its value for export.
+// flatten lists the leaves of a JSON value with their pointers. Only a scalar can be exported (a safe field never carries
+// an object or an array out whole), and a leaf inside a field named like a credential is marked secret and never exported.
 func flatten(pointer, name string, v any, out *[]requestField) {
+	flattenUnder(pointer, name, v, false, out)
+}
+
+func flattenUnder(pointer, name string, v any, secret bool, out *[]requestField) {
 	if len(*out) >= maxLoggedFields {
 		return
 	}
@@ -87,19 +93,18 @@ func flatten(pointer, name string, v any, out *[]requestField) {
 		sort.Strings(keys)
 		for _, k := range keys {
 			child := pointer + "/" + strings.ReplaceAll(strings.ReplaceAll(k, "~", "~0"), "/", "~1")
-			if pointer == "" { // a top-level field may be exported, whatever its type
-				*out = append(*out, requestField{Where: "body." + child, Name: k, value: x[k]})
-			}
-			flatten(child, k, x[k], out)
+			flattenUnder(child, k, x[k], secret || IsSecretName(k), out)
 		}
 	case []any:
 		for i, e := range x {
-			flatten(pointer+"/"+strconv.Itoa(i), name, e, out)
+			// an element is named by its place, never by the array's name: a safe name covers the field, not what it holds
+			flattenUnder(pointer+"/"+strconv.Itoa(i), "", e, secret, out)
 		}
 	default:
-		if pointer != "" && strings.Count(pointer, "/") > 1 {
-			*out = append(*out, requestField{Where: "body." + pointer, Name: name, value: v})
+		if pointer == "" {
+			return
 		}
+		*out = append(*out, requestField{Where: "body." + pointer, Name: name, value: v, secret: secret})
 	}
 }
 
@@ -118,7 +123,11 @@ func (s *scope) logCall(c *call, summary string, a answer, viol []oas.Violation)
 		fields = append(fields, loggedField{"header." + name, name, strings.Join(vals, ",")})
 	}
 	for _, f := range requestFields(c) {
-		fields = append(fields, loggedField{f.Where, f.Name, fmt.Sprint(f.value)})
+		name := f.Name
+		if f.secret {
+			name = "" // a leaf of a credential is never on the operator's safe list, whatever its own name
+		}
+		fields = append(fields, loggedField{f.Where, name, fmt.Sprint(f.value)})
 	}
 	s.e.log.printf("fields run=%s correlation=%s %s", s.runID, c.corr, render(fields, s.e.opts.Redact))
 }

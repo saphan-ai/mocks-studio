@@ -18,6 +18,9 @@ var (
 	zeroSpanID         = strings.Repeat("0", 16)
 )
 
+// unmatchedPath stands in an event or a log line where the path of a request that matched no route would be.
+const unmatchedPath = "<unmatched path>"
+
 // Rules a violation can carry that the document's schemas do not name.
 const ruleBodySize = "maxBytes"
 
@@ -134,7 +137,8 @@ func (s *scope) decide(c *call, settings map[string]float64) (string, answer, []
 	doc := s.e.doc
 	route, params, found := doc.Match(c.r.URL.EscapedPath())
 	if !found {
-		return fmt.Sprintf("%s %s — no path template of the document matches", c.r.Method, truncate(c.r.URL.Path, 200)),
+		// The path is not recorded: it can carry what a caller meant to keep private, such as a reset token.
+		return fmt.Sprintf("%s %s — no path template of the document matches", c.r.Method, unmatchedPath),
 			refusalAnswer(http.StatusNotFound, refusal{
 				Message:    "No path template of the document matches this request path and the request was refused; use one of the document's paths.",
 				ReasonCode: "route-unknown",
@@ -225,6 +229,10 @@ func violationAnswer(v []oas.Violation) answer {
 	for i, x := range v {
 		items[i] = item{x.Pointer, x.Rule}
 	}
+	message := fmt.Sprintf("The request field %s breaks the rule %q of the OpenAPI document and the request was refused; correct that field and send the request again.", v[0].Pointer, v[0].Rule)
+	if v[0].Rule == oas.RuleMaxDepth {
+		message = fmt.Sprintf("The request body nests objects and arrays deeper than the limit of %d levels and the request was refused; send a body that nests no deeper.", oas.MaxBodyDepth)
+	}
 	body := struct {
 		refusal
 		Pointer    string `json:"pointer"`
@@ -232,7 +240,7 @@ func violationAnswer(v []oas.Violation) answer {
 		Violations []item `json:"violations"`
 	}{
 		refusal: refusal{
-			Message:    fmt.Sprintf("The request field %s breaks the rule %q of the OpenAPI document and the request was refused; correct that field and send the request again.", v[0].Pointer, v[0].Rule),
+			Message:    message,
 			ReasonCode: "request-invalid",
 		},
 		Pointer: v[0].Pointer, Rule: v[0].Rule, Violations: items,
