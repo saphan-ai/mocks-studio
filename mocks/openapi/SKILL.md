@@ -30,6 +30,8 @@ $ openapi-mock serve --spec examples/acme-example-orders/openapi.yaml --name acm
   another address than `--control`. Default: `http://` plus the address `--control` bound.
 - `--safe-field <name>` (repeatable, none by default) names a query or body field whose value may appear in clear in
   an event's payload. A name that looks like a credential (`password`, `pin`, `token`, `secret`, `api_key`…) is refused.
+  Only a scalar value is exported: an object or an array in a safe field is dropped, and nothing inside a field named
+  like a credential is exported whatever its own name.
 - `--verbose` also logs the name of every header, query and body field of each call, each with the marker `[redacted]`
   in place of its value.
 
@@ -47,7 +49,7 @@ $ openapi-mock manifest --spec examples/acme-example-orders/openapi.yaml --name 
 (this is the acceptance run of the example; it exits 0 when every check passes):
 
 ```
-$ go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/openapi/examples/acme-example-orders/mocks.manifest.json
+$ go -C ../../conformance run ./cmd/mocks-conformance --manifest ../mocks/openapi/examples/acme-example-orders/mocks.manifest.json
 ```
 
 ## What the mock answers
@@ -61,11 +63,16 @@ For a call on a scope's listener, in this order:
    A broken request is `400` with a JSON body naming the field's JSON pointer and the rule broken:
    `{"message":…,"reason_code":"request-invalid","pointer":"/body/quantity","rule":"minimum","violations":[…]}`.
    Pointers start with `/path/`, `/query/`, `/header/`, `/cookie/` or `/body`. The `request.received` event's summary
-   names the same pointer. The value is never echoed.
+   names the same pointer. The value is never echoed. A JSON body nested more than 64 levels deep (the engine
+   constant `oas.MaxBodyDepth`, not a setting) is refused as `/body` with the rule `maxDepth`, before the schema runs;
+   text after the JSON value, a stray `}` included, is refused with the rule `json`. The event summary of a request that
+   matches no route is `<METHOD> <unmatched path>`: the path is never recorded, because it can carry a token.
 3. **Answer.** The operation's lowest 2xx response (else `default`): its `example`, else the first of its `examples`, else
    a value generated from its schema. Generation is deterministic: the same schema gives the same bytes. It uses a
    schema's `const`, `example`, `examples`, `default` or first `enum` member where there is one, a format-correct value
    for `date-time`, `uuid`, `email` and the like, the smallest number inside `minimum`/`maximum`, and cuts recursive schemas.
+   A generated array holds at most 100 items (`oas.MaxGenItems`) whatever `minItems` asks for; a schema that needs more
+   carries an example. Each operation's answer is built once and kept.
 
 A fault setting (below) changes the answer *after* routing and takes precedence over a `400`: a mock told to answer 503
 answers 503 even to a request that also breaks the document.
