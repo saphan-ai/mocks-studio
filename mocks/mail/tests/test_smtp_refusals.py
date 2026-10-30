@@ -192,3 +192,47 @@ class SmtpRefusalTest(MockTestCase):
         raw.sock.sendall(b".\r\n")
         self.assertEqual(raw.read()[0], 552)
         self.assertEqual(len(self.scope.mailbox), 0)
+
+    # -- DATA lines: read whole up to 1000 octets with the CRLF (RFC 5321 4.5.3.1.6); dot rule 4.5.2 --
+
+    def into_data(self) -> RawSmtp:
+        raw = self.in_transaction()
+        self.assertEqual(raw.cmd("RCPT TO:<b@acme-example.test>")[0], 250)
+        self.assertEqual(raw.cmd("DATA")[0], 354)
+        return raw
+
+    def stored_body(self) -> bytes:
+        (mail,) = self.scope.mailbox.snapshot()
+        return mail.raw.split(b"\r\n\r\n", 1)[1]
+
+    def test_a_line_whose_second_piece_is_a_lone_dot_does_not_end_data_early(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"A" * 1002 + b".\r\nRSET\r\nmore body\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 500)
+        self.assertEqual(raw.cmd("NOOP")[0], 250)  # one reply for the whole DATA: RSET and "more body" were body, not commands
+        self.assertEqual(len(self.scope.mailbox), 0)
+
+    def test_a_line_over_the_limit_is_refused_500_and_never_stored_split(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"x" * 1500 + b"\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 500)
+        self.assertEqual(len(self.scope.mailbox), 0)
+
+    def test_a_line_of_exactly_1000_octets_with_its_crlf_is_stored_intact(self) -> None:
+        raw = self.into_data()
+        line = b"y" * 998
+        raw.sock.sendall(b"Subject: s\r\n\r\n" + line + b"\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 250)
+        self.assertEqual(self.stored_body(), line + b"\r\n")
+
+    def test_a_line_of_1001_octets_with_its_crlf_is_refused_500(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"Subject: s\r\n\r\n" + b"y" * 999 + b"\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 500)
+        self.assertEqual(len(self.scope.mailbox), 0)
+
+    def test_a_line_starting_with_one_dot_loses_that_dot(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"Subject: s\r\n\r\n.hidden\r\n..doubled\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 250)
+        self.assertEqual(self.stored_body(), b"hidden\r\n.doubled\r\n")

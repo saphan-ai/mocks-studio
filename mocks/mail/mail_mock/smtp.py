@@ -26,6 +26,8 @@ log = logging.getLogger("mail_mock")
 
 #: Longest command line, in bytes, RFC 5321 §4.5.3.1.4 (512) widened for AUTH and long addresses.
 MAX_LINE_BYTES = 1000
+#: A DATA line, CRLF included (RFC 5321 section 4.5.3.1.6).
+MAX_DATA_LINE_BYTES = 1000
 #: Largest mail accepted, in bytes; advertised in the SIZE extension.
 MAX_MESSAGE_BYTES = 10 * 1024 * 1024
 #: Most recipients one transaction accepts.
@@ -382,20 +384,30 @@ class SmtpSession:
         return True
 
     def _receive_data(self) -> None:
-        body, too_big = bytearray(), False
+        body, too_big, too_long = bytearray(), False, False
         while True:
-            raw = self.rfile.readline(MAX_LINE_BYTES + 2)
+            raw = self.rfile.readline(MAX_DATA_LINE_BYTES + 1)
             if not raw:
                 raise _Closed("peer closed during DATA")
+            if len(raw) > MAX_DATA_LINE_BYTES:
+                # Never split a line: the rest of it is body, so a piece that reads `.` must not end DATA.
+                too_long = True
+                while not raw.endswith(b"\n"):
+                    raw = self.rfile.readline(MAX_DATA_LINE_BYTES)
+                    if not raw:
+                        raise _Closed("peer closed during DATA")
+                continue
             if raw in (b".\r\n", b".\n"):
                 break
-            if raw.startswith(b".."):
-                raw = raw[1:]
-            if not too_big:
+            if raw.startswith(b"."):
+                raw = raw[1:]  # RFC 5321 section 4.5.2: the receiver deletes the first dot of a line
+            if not too_big and not too_long:
                 body += raw.rstrip(b"\r\n") + b"\r\n"
                 too_big = len(body) > MAX_MESSAGE_BYTES
         self._new_exchange()
-        if too_big:
+        if too_long:
+            self._reply(500, "5.5.6 a line of the message is longer than 1000 octets")
+        elif too_big:
             self._reply(552, "5.3.4 message size exceeds the limit")
         else:
             self._store(bytes(body))

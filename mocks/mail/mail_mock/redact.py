@@ -20,10 +20,23 @@ KIND_HEADER = "header"  # one header line of a received mail
 
 Redactor = Callable[[str, str], str]
 
-#: Header-name words that mark a header as secret-bearing.
-_SECRET_WORDS = frozenset({"pin", "pwd", "passwd", "password", "token", "secret", "otp", "apikey"})
-_SECRET_SUBSTRINGS = ("password", "passwd", "token", "secret", "authorization", "credential")
+#: Short words that mark a header only as a whole `-`/`_`/`.`-separated part (`pin` is inside `shipping`).
+_SECRET_WORDS = frozenset({"pin", "pwd", "otp"})
+#: Names that mark a header wherever they occur once case and the separators are gone, so `X-Api-Key`,
+#: `X_API_KEY` and `apikey` are one name. Written with their separators for the reader, normalised on use.
+_SECRET_NAMES = (
+    "password", "passwd", "token", "secret", "authorization", "credential",
+    "api-key", "auth-key", "cookie", "set-cookie",
+)
 _NAME_SPLIT = re.compile(r"[-_.]")
+
+
+def _normalised(name: str) -> str:
+    return _NAME_SPLIT.sub("", name.lower())
+
+
+_SECRET_JOINED = tuple(_normalised(name) for name in _SECRET_NAMES)
+
 _HEADER_NAME = re.compile(r"^(?P<name>[^:\s]+)\s*:")
 _VERB = re.compile(r"^\s*(?P<verb>\S+)")
 _IMAP_TAGGED = re.compile(r"^(?P<tag>\S+)\s+(?P<verb>\S+)", re.ASCII)
@@ -34,10 +47,9 @@ MAX_LOGGED_LINE = 200
 
 def is_secret_header(name: str) -> bool:
     """Whether a header called `name` is named like a password, a PIN or a token."""
-    lowered = name.lower()
-    if any(word in lowered for word in _SECRET_SUBSTRINGS):
+    if any(joined in _normalised(name) for joined in _SECRET_JOINED):
         return True
-    return any(part in _SECRET_WORDS for part in _NAME_SPLIT.split(lowered))
+    return any(part in _SECRET_WORDS for part in _NAME_SPLIT.split(name.lower()))
 
 
 def redact(kind: str, line: str) -> str:

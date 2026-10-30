@@ -17,6 +17,8 @@ listener and its own empty mailbox, so two runs never see each other's mail. All
 ## Start it
 
 ```
+cd mocks/mail   # from the repository root: the package has no installer, so it runs from its own directory
+pip install -r requirements.txt
 python -m mail_mock serve --control 127.0.0.1:19100
 ```
 
@@ -79,7 +81,8 @@ defaults and keeps the mailbox.
   `scope.closed`.
 
 **No secret is logged or exported**: a password, the base64 `AUTH PLAIN` string, and the value of any mail
-header named like `password`, `pin`, `token`, `secret` or `authorization` never reach the log, stdout, stderr
+header named like `password`, `pin`, `token`, `secret`, `authorization`, `api-key`, `auth-key`, `cookie` or
+`set-cookie` (any case, `-`, `_` or `.` between the words) never reach the log, stdout, stderr
 or an event; the log keeps the header name and `[REDACTED]`.
 
 ## Worked example
@@ -155,6 +158,7 @@ fails with `550` (`smtplib.SMTPRecipientsRefused` when it is the only one) and t
 ## Check the mock itself
 
 ```
+# from the repository root (not from mocks/mail)
 python -m unittest discover -s mocks/mail -v
 go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/mail/mocks.manifest.json
 ```
@@ -167,5 +171,8 @@ go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/mail/mocks.man
   mock's own tests, not by the suite.
 - Of the settings, the suite exercises the first one that declares a `tcp` effect (`refuse_recipient`); the
   others are proved by this mock's own tests.
+- A message line longer than 1000 octets with its CRLF is refused `500 5.5.6` after the closing dot, and the
+  mail is not stored (RFC 5321 section 4.5.3.1.6). An ENVELOPE sends header values as received (RFC 2047
+  words stay encoded).
 - Not here: POP3, IMAP folders other than INBOX, IDLE, `UID SEARCH`/`UID FETCH`, literals in IMAP commands,
   DKIM/SPF, delivery to any real host.

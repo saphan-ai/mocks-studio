@@ -57,7 +57,7 @@ def nstring(value: str | None) -> bytes:
     """An IMAP nstring: NIL, a quoted string, or a literal when the text needs one."""
     if value is None or value == "":
         return b"NIL"
-    data = value.encode("utf-8")
+    data = value.encode("utf-8", errors="surrogateescape")  # a raw 8-bit header comes back as the bytes it arrived as
     if any(b < 32 or b > 126 for b in data):
         return b"{%d}\r\n" % len(data) + data
     return b'"' + data.replace(b"\\", b"\\\\").replace(b'"', b'\\"') + b'"'
@@ -78,12 +78,15 @@ def envelope(mail: StoredMail) -> bytes:
     """The ENVELOPE structure of RFC 3501 §7.4.2 for a stored mail."""
     msg = mail.parsed()
 
-    def hdr(name: str) -> str | None:
-        value = msg.get(name)
-        return None if value is None else str(value)
+    # The header values as received: RFC 3501 section 7.4.2 sends RFC 2047 encoded words undecoded.
+    raw_items = [(k.lower(), re.sub(r"\r?\n(?=[ \t])", "", v).strip()) for k, v in msg.raw_items()]
 
     def addrs(name: str) -> list[str]:
-        return [str(v) for v in (msg.get_all(name) or [])]
+        return [v for k, v in raw_items if k == name.lower()]
+
+    def hdr(name: str) -> str | None:
+        found = addrs(name)
+        return found[0] if found else None
 
     sender = addrs("Sender") or addrs("From")
     reply_to = addrs("Reply-To") or addrs("From")

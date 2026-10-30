@@ -5,7 +5,7 @@ from __future__ import annotations
 import imaplib
 import smtplib
 
-from .support import HOST, WAIT_SECONDS, MockTestCase, plain_credentials
+from .support import HOST, WAIT_SECONDS, MockTestCase, RawSmtp, plain_credentials
 
 
 class ImapTest(MockTestCase):
@@ -77,6 +77,31 @@ class ImapTest(MockTestCase):
         text = data[0].decode() if isinstance(data[0], bytes) else data[0][0].decode()
         for expected in ('"env"', '"shop"', '"acme-example.test"', '"customer"', mid):
             self.assertIn(expected, text)
+
+    def deliver_raw(self, subject: bytes) -> None:
+        """Send one mail whose Subject header is exactly `subject` (bytes), over a byte-exact SMTP session."""
+        with RawSmtp(self.scope.port) as smtp:
+            smtp.ehlo()
+            self.assertEqual(smtp.cmd("MAIL FROM:<a@acme-example.test>")[0], 250)
+            self.assertEqual(smtp.cmd("RCPT TO:<b@acme-example.test>")[0], 250)
+            self.assertEqual(smtp.cmd("DATA")[0], 354)
+            smtp.sock.sendall(b"From: a@acme-example.test\r\nTo: b@acme-example.test\r\nSubject: " + subject + b"\r\n\r\nbody\r\n.\r\n")
+            self.assertEqual(smtp.read()[0], 250)
+
+    def envelope_bytes(self, client: imaplib.IMAP4) -> bytes:
+        typ, data = client.fetch("1", "(ENVELOPE)")
+        self.assertEqual(typ, "OK")
+        return b"".join(part for item in data for part in (item if isinstance(item, tuple) else (item,)) if isinstance(part, bytes))
+
+    def test_envelope_sends_an_rfc2047_subject_as_the_raw_encoded_words(self) -> None:
+        self.deliver_raw(b"=?utf-8?q?caf=C3=A9?=")
+        self.assertIn(b"=?utf-8?q?caf=C3=A9?=", self.envelope_bytes(self.client()))
+
+    def test_a_raw_8_bit_subject_is_sent_as_its_own_bytes_and_the_session_survives(self) -> None:
+        self.deliver_raw(b"caf\xe9 \xc3\xa9")
+        client = self.client()
+        self.assertIn(b"caf\xe9 \xc3\xa9", self.envelope_bytes(client))
+        self.assertEqual(client.noop()[0], "OK")
 
     def test_fetch_a_range_returns_each_message(self) -> None:
         self.deliver(subject="one")

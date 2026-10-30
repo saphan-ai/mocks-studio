@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 import imaplib
 import io
 import smtplib
@@ -22,6 +23,8 @@ PASSWORD = "Zq7-fictional-Pa55phrase"
 WRONG_PASSWORD = "Wr0ng-fictional-Pa55phrase"
 PIN = "pin-7482-9136"
 TOKEN = "tok-f3a9c1d27b44"
+API_KEY = "key-9c41e7d0a2b8"
+COOKIE = "ck-51d0e8a3f7c6"
 USER = manifest.DEFAULT_USER
 
 
@@ -35,6 +38,8 @@ SECRETS = {
     "wrong password": WRONG_PASSWORD,
     "pin": PIN,
     "token": TOKEN,
+    "api key": API_KEY,
+    "cookie": COOKIE,
     "base64 of the password": b64(PASSWORD).rstrip("="),
     "base64 of the wrong password": b64(WRONG_PASSWORD).rstrip("="),
     "base64 of the pin": b64(PIN).rstrip("="),
@@ -44,9 +49,24 @@ SECRETS = {
 }
 
 
+def digest_forms(value: str) -> list[str]:
+    """The SHA-256 of a secret, as hex and as base64 (padding stripped): a digest is an encoding too (spec section 6)."""
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    return [digest.hex(), base64.b64encode(digest).decode("ascii").rstrip("="), base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")]
+
+
+#: The digest of every secret and every secret-bearing line the scenario sends.
+SECRET_DIGESTS = {
+    f"sha256 of {name} ({i})": form
+    for name, value in SECRETS.items()
+    for i, form in enumerate(digest_forms(value))
+}
+SECRET_DIGESTS.update({f"sha256 of the AUTH PLAIN line ({i})": f for i, f in enumerate(digest_forms(f"AUTH PLAIN {b64(chr(0) + USER + chr(0) + PASSWORD)}"))})
+
+
 def leaks(captured: str) -> list[str]:
-    """The names of the secrets that appear in `captured`."""
-    return [name for name, value in SECRETS.items() if value in captured]
+    """The names of the secrets, and of their SHA-256 digests, that appear in `captured`."""
+    return [name for name, value in {**SECRETS, **SECRET_DIGESTS}.items() if value in captured]
 
 
 class Scenario:
@@ -72,6 +92,8 @@ class Scenario:
         msg = self.test.message(subject="Your code", body=f"Your PIN is {PIN}\n")
         msg["X-Pin"] = PIN
         msg["X-Api-Token"] = TOKEN
+        msg["X-Api-Key"] = API_KEY
+        msg["Cookie"] = f"session={COOKIE}"
         with smtplib.SMTP(HOST, scope.port, timeout=WAIT_SECONDS) as smtp:
             smtp.ehlo()
             smtp.starttls(context=self.test.trust(scope))
@@ -113,6 +135,12 @@ class NoSecretTest(MockTestCase):
             with self.subTest(form=name):
                 self.assertEqual(leaks(f"something {value} something"), [name])
 
+    def test_leaks_finds_a_planted_digest_of_a_secret_in_hex_and_in_base64(self) -> None:
+        for form in digest_forms(PASSWORD):
+            with self.subTest(form=form[:8]):
+                self.assertNotEqual(leaks(f"digest={form}"), [])
+        self.assertEqual(leaks("digest=" + hashlib.sha256(b"not a secret").hexdigest()), [])
+
     def test_no_password_pin_token_or_base64_of_them_reaches_a_log_or_an_event(self) -> None:
         logged, events = Scenario(self, self.new_mock()).run()
         self.assertEqual(leaks(logged), [], "a secret reached the log")
@@ -120,7 +148,7 @@ class NoSecretTest(MockTestCase):
 
     def test_the_scenario_really_exercised_the_redaction(self) -> None:
         logged, events = Scenario(self, self.new_mock()).run()
-        for expected in ("AUTH PLAIN [REDACTED]", "AUTH LOGIN [REDACTED]", "LOGIN [REDACTED]", "X-Pin: [REDACTED]", "X-Api-Token: [REDACTED]"):
+        for expected in ("AUTH PLAIN [REDACTED]", "AUTH LOGIN [REDACTED]", "LOGIN [REDACTED]", "X-Pin: [REDACTED]", "X-Api-Token: [REDACTED]", "X-Api-Key: [REDACTED]", "Cookie: [REDACTED]"):
             self.assertIn(expected, logged)
         self.assertIn("message.delivered", events, "the PIN-bearing mail must have been delivered")
 
@@ -130,6 +158,8 @@ class NoSecretTest(MockTestCase):
         found = leaks(logged)
         self.assertIn("pin", found)
         self.assertIn("token", found)
+        self.assertIn("api key", found)
+        self.assertIn("cookie", found)
         self.assertIn("AUTH PLAIN string", found)
         self.assertEqual(leaks(events), [], "events never carry a secret, whatever the logger does")
 
@@ -145,8 +175,13 @@ class RedactionUnitTest(MockTestCase):
             with self.subTest(header=name):
                 self.assertEqual(redact.redact(redact.KIND_HEADER, f"{name}: hunter2"), f"{name}: [REDACTED]")
 
+    def test_api_key_auth_key_and_cookie_headers_lose_their_value_in_every_spelling(self) -> None:
+        for name in ("X-Api-Key", "Api-Key", "X-API-KEY", "X_Api_Key", "apikey", "X-Auth-Key", "Cookie", "Set-Cookie", "X.Api.Key"):
+            with self.subTest(header=name):
+                self.assertEqual(redact.redact(redact.KIND_HEADER, f"{name}: hunter2"), f"{name}: [REDACTED]")
+
     def test_header_lines_that_only_contain_the_letters_pin_are_not_redacted(self) -> None:
-        for name in ("Shipping-Notes", "Subject", "X-Spinner", "Message-ID"):
+        for name in ("Shipping-Notes", "Subject", "X-Spinner", "Message-ID", "X-Monkey", "Cookbook"):
             with self.subTest(header=name):
                 self.assertEqual(redact.redact(redact.KIND_HEADER, f"{name}: visible"), f"{name}: visible")
 
