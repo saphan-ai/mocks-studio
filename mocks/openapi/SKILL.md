@@ -47,7 +47,7 @@ $ openapi-mock manifest --spec examples/acme-example-orders/openapi.yaml --name 
 (this is the acceptance run of the example; it exits 0 when every check passes):
 
 ```
-$ go -C conformance run ./cmd/mocks-conformance --manifest mocks/openapi/examples/acme-example-orders/mocks.manifest.json
+$ go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/openapi/examples/acme-example-orders/mocks.manifest.json
 ```
 
 ## What the mock answers
