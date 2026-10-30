@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 log = logging.getLogger("mail_mock")
 
 MAX_LINE_BYTES = 8192
-_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|\(|\)|[^\s()"]+')
 _SEQ_ITEM = re.compile(r"^(\d+|\*)(?::(\d+|\*))?$")
 
 _FETCH_ITEMS = {"RFC822", "BODY[]", "BODY.PEEK[]", "ENVELOPE", "FLAGS", "UID", "RFC822.SIZE"}
@@ -45,12 +44,7 @@ class _Bad(Exception):
 
 def tokenize(line: str) -> list[str]:
     """Split an IMAP command line into atoms, quoted strings (unquoted here) and parentheses."""
-    out = []
-    for tok in _TOKEN.findall(line):
-        if tok.startswith('"'):
-            tok = re.sub(r"\\(.)", r"\1", tok[1:-1])
-        out.append(tok)
-    return out
+    return redaction.imap_tokens(line)  # one tokenizer for the session and the redactor, so they never disagree
 
 
 def nstring(value: str | None) -> bytes:
@@ -123,6 +117,7 @@ class ImapSession:
         self.rfile = conn.makefile("rb")
         self.authed = False
         self.selected = False
+        self.secret_follows = False  # the last line was a LOGIN or AUTHENTICATE ending in a literal: the next line is the secret
 
     def run(self) -> None:
         try:
@@ -150,7 +145,9 @@ class ImapSession:
         if not raw:
             raise _Closed("peer closed")
         line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-        log.info("imap[%s] < %s", self.scope.run_id, redaction_for_log(self.scope, redaction.KIND_COMMAND, line))
+        kind = redaction.KIND_AUTH_DATA if self.secret_follows else redaction.KIND_COMMAND
+        self.secret_follows = redaction.starts_literal_credential(line)
+        log.info("imap[%s] < %s", self.scope.run_id, redaction_for_log(self.scope, kind, line))
         tokens = tokenize(line)
         if len(tokens) < 2:
             self._untagged_bad("a command is a tag and a verb")

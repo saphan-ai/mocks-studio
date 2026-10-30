@@ -402,7 +402,7 @@ class SmtpSession:
             if raw.startswith(b"."):
                 raw = raw[1:]  # RFC 5321 section 4.5.2: the receiver deletes the first dot of a line
             if not too_big and not too_long:
-                body += raw.rstrip(b"\r\n") + b"\r\n"
+                body += raw.removesuffix(b"\n").removesuffix(b"\r") + b"\r\n"  # exactly one line ending is the terminator
                 too_big = len(body) > MAX_MESSAGE_BYTES
         self._new_exchange()
         if too_long:

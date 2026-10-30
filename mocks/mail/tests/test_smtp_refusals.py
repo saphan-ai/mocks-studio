@@ -205,6 +205,14 @@ class SmtpRefusalTest(MockTestCase):
         (mail,) = self.scope.mailbox.snapshot()
         return mail.raw.split(b"\r\n\r\n", 1)[1]
 
+    def test_a_line_of_exactly_the_read_size_followed_by_a_lone_dot_does_not_end_data_early(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"A" * 1001 + b".\r\nQUIT\r\nmore body\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 500)
+        # the piece after 1001 octets is `.\r\n`: it is body and must not end DATA, or QUIT would run and answer 221 here
+        self.assertEqual(raw.cmd("NOOP")[0], 250)
+        self.assertEqual(len(self.scope.mailbox), 0)
+
     def test_a_line_whose_second_piece_is_a_lone_dot_does_not_end_data_early(self) -> None:
         raw = self.into_data()
         raw.sock.sendall(b"A" * 1002 + b".\r\nRSET\r\nmore body\r\n.\r\n")
@@ -236,3 +244,9 @@ class SmtpRefusalTest(MockTestCase):
         raw.sock.sendall(b"Subject: s\r\n\r\n.hidden\r\n..doubled\r\n.\r\n")
         self.assertEqual(raw.read()[0], 250)
         self.assertEqual(self.stored_body(), b"hidden\r\n.doubled\r\n")
+
+    def test_a_line_ending_in_two_crs_is_stored_with_both(self) -> None:
+        raw = self.into_data()
+        raw.sock.sendall(b"Subject: s\r\n\r\ntext\r\r\n.\r\n")
+        self.assertEqual(raw.read()[0], 250)
+        self.assertEqual(self.stored_body(), b"text\r\r\n")

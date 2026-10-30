@@ -12,6 +12,7 @@ import hashlib
 import imaplib
 import io
 import smtplib
+import socket
 from unittest import mock as umock
 
 from mail_mock import manifest, redact
@@ -195,3 +196,65 @@ class RedactionUnitTest(MockTestCase):
 
     def test_an_ordinary_command_is_logged_as_it_is(self) -> None:
         self.assertEqual(redact.redact(redact.KIND_COMMAND, "MAIL FROM:<a@acme-example.test>"), "MAIL FROM:<a@acme-example.test>")
+
+    def test_redact_keeps_only_a_known_mechanism_word_after_auth(self) -> None:
+        self.assertEqual(redact.redact(redact.KIND_COMMAND, "AUTH AHVzZXIAcGFzcw=="), "AUTH [REDACTED]")
+        self.assertEqual(redact.redact(redact.KIND_COMMAND, "AUTH plain AHVzZXIAcGFzcw=="), "AUTH PLAIN [REDACTED]")
+
+
+class WireLogTest(MockTestCase):
+    """What the log holds when a client sends a credential in a shape the parsers accept but the plain form is not (law #56)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.scope = self.open_scope("wire-log", protocol="smtp")
+
+    def imap_lines(self, *lines: bytes, replies: int) -> str:
+        """Send each raw line to the IMAP session, wait for `replies` reply lines, and return what the mock logged."""
+        with LogCapture() as logs:
+            sock = socket.create_connection((HOST, self.scope.imap_port), timeout=WAIT_SECONDS)
+            self.addCleanup(sock.close)
+            rfile = sock.makefile("rb")
+            rfile.readline()  # greeting
+            for line in lines:
+                sock.sendall(line)
+            for _ in range(replies):
+                self.assertTrue(rfile.readline(), "the session closed before answering")
+            return logs.text()
+
+    def test_imap_login_with_a_leading_space_does_not_log_the_password(self) -> None:
+        logged = self.imap_lines(f" a1 LOGIN {USER} {PASSWORD}\r\n".encode(), replies=1)
+        self.assertNotIn(PASSWORD, logged)
+
+    def test_imap_login_with_a_quoted_verb_does_not_log_the_password(self) -> None:
+        logged = self.imap_lines(f'a1 "LOGIN" {USER} {PASSWORD}\r\n'.encode(), replies=1)
+        self.assertNotIn(PASSWORD, logged)
+
+    def test_imap_authenticate_with_a_leading_space_does_not_log_its_argument(self) -> None:
+        logged = self.imap_lines(f" a1 AUTHENTICATE PLAIN {b64(PASSWORD)}\r\n".encode(), replies=1)
+        self.assertNotIn(b64(PASSWORD), logged)
+
+    def test_the_line_after_an_imap_login_literal_is_not_logged(self) -> None:
+        logged = self.imap_lines(f"a1 LOGIN {USER} {{{len(PASSWORD)}+}}\r\n".encode(), f"{PASSWORD}\r\n".encode(), replies=2)
+        self.assertNotIn(PASSWORD, logged)
+
+    def test_an_ordinary_line_after_an_imap_login_without_a_literal_is_still_logged(self) -> None:
+        logged = self.imap_lines(f"a1 LOGIN {USER} wrong\r\n".encode(), b"a2 NOOP\r\n", replies=2)
+        self.assertIn("a2 NOOP", logged)
+
+    def test_smtp_auth_with_no_mechanism_word_does_not_log_the_credential_in_any_case(self) -> None:
+        credential = b64(f"\0{USER}\0{PASSWORD}").rstrip("=")
+        with LogCapture() as logs:
+            sock = socket.create_connection((HOST, self.scope.port), timeout=WAIT_SECONDS)
+            self.addCleanup(sock.close)
+            rfile = sock.makefile("rb")
+            rfile.readline()
+            sock.sendall(b"EHLO client.acme-example.test\r\n")
+            while rfile.readline()[3:4] == b"-":
+                pass
+            sock.sendall(f"AUTH {credential}\r\n".encode())
+            rfile.readline()
+            logged = logs.text()
+        for text in (credential, credential.upper()):
+            for start in range(len(text) - 7):
+                self.assertNotIn(text[start:start + 8], logged)
