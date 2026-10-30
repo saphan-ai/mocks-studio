@@ -156,7 +156,7 @@ fails with `550` (`smtplib.SMTPRecipientsRefused` when it is the only one) and t
 
 ```
 python -m unittest discover -s mocks/mail -v
-go -C conformance run ./cmd/mocks-conformance --manifest mocks/mail/mocks.manifest.json
+go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/mail/mocks.manifest.json
 ```
 
 ## Limits (read before trusting a green run)
