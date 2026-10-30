@@ -1,0 +1,42 @@
+{
+  "contract": "mocks.adapter/v1",
+  "name": "scim-mock",
+  "version": "0.1.0",
+  "description": "A SCIM 2.0 service provider (RFC 7643, RFC 7644): Users, Groups, filter, PATCH and ETags, for testing user provisioning.",
+  "protocols": ["http"],
+  "control": { "url": "http://127.0.0.1:9100" },
+  "settings": [
+    {
+      "name": "error_status",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 599,
+      "scope": "run",
+      "description": "HTTP status every SCIM request is answered with instead of its normal result; 0 turns it off. Values 1 to 99 are refused.",
+      "effect": { "protocol": "http", "value": 503, "expect": { "http_status": 503 } }
+    },
+    {
+      "name": "latency_ms",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 10000,
+      "scope": "run",
+      "description": "Milliseconds every SCIM request waits before it is answered; 0 turns it off."
+    },
+    {
+      "name": "rate_limit",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 100000,
+      "scope": "run",
+      "description": "Requests the scope answers in each 60-second window; the next one gets 429 with Retry-After. 0 turns it off. Setting it or resetting the scope restarts the window."
+    }
+  ],
+  "safe_fields": ["method", "path", "resource_type", "user_name", "display_name", "active"],
+  "conformance": {
+    "probe": { "http": { "method": "GET", "path": "/ServiceProviderConfig" } }
+  }
+}
