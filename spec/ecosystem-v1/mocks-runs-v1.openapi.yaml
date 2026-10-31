@@ -1,0 +1,188 @@
+openapi: 3.1.0
+info:
+  title: Mocks Studio — runs and scenarios (v1)
+  version: 1.0.0
+  description: >
+    Appendix C of the W0 ADR draft (train mock-studio, 2026-10-29). Normative for the operations a
+    test, a leg or a person uses to open a run, attach a test run, set a scenario, reset and close.
+    The core implements it (closed); the shape is public. Every refusal is a Refusal document whose
+    first sentence says what was measured, what was refused and what to do next (law #55).
+    Every operation except openRun requires the run credential (ADR section 5b): missing → 401
+    run-credential-missing; another run's, expired or revoked → 403 run-credential-invalid.
+security:
+  - runCredential: []
+paths:
+  /v1/runs:
+    post:
+      operationId: openRun
+      summary: Open a run (one scope) and receive its endpoints and its run credential (returned once)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mocks]
+              properties:
+                run_id: { $ref: '#/components/schemas/RunId' }
+                test_run_id: { $ref: '#/components/schemas/RunId' }
+                mocks:
+                  type: array
+                  minItems: 1
+                  items: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' }
+      responses:
+        '201':
+          description: Run opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunOpened' }
+        '409': { $ref: '#/components/responses/Refused' }
+        '422': { $ref: '#/components/responses/Refused' }
+  /v1/runs/{run_id}:
+    parameters: [ { $ref: '#/components/parameters/RunId' } ]
+    get:
+      operationId: getRun
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '404': { $ref: '#/components/responses/Refused' }
+    delete:
+      operationId: closeRun
+      responses:
+        '204': { description: Closed; scope.closed emitted }
+        '404': { $ref: '#/components/responses/Refused' }
+  /v1/runs/{run_id}/attach:
+    parameters: [ { $ref: '#/components/parameters/RunId' } ]
+    post:
+      operationId: attachTestRun
+      summary: Attach a test run to an open run (resets it unless reset is false)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [test_run_id]
+              properties:
+                test_run_id: { $ref: '#/components/schemas/RunId' }
+                reset: { type: boolean, default: true }
+      responses:
+        '200': { description: Attached; scope.reset emitted when reset is true }
+        '409': { $ref: '#/components/responses/Refused' }
+    delete:
+      operationId: detachTestRun
+      responses:
+        '204': { description: Detached }
+  /v1/runs/{run_id}/reset:
+    parameters: [ { $ref: '#/components/parameters/RunId' } ]
+    post:
+      operationId: resetRun
+      responses:
+        '204': { description: Every mock back to its defaults; scope.reset emitted }
+        '404': { $ref: '#/components/responses/Refused' }
+  /v1/runs/{run_id}/mocks/{mock}/settings:
+    parameters:
+      - { $ref: '#/components/parameters/RunId' }
+      - { name: mock, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' } }
+    get:
+      operationId: getSettings
+      responses:
+        '200':
+          description: The mock's settings in this run, with their declared defaults and allowed values
+          content:
+            application/json:
+              schema: { type: object }
+    put:
+      operationId: setScenario
+      summary: Set declared settings; validated against the mock's manifest; scenario.set emitted
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: setting name → value; only names the manifest declares
+      responses:
+        '200': { description: Applied }
+        '422': { $ref: '#/components/responses/Refused' }
+  /v1/runs/{run_id}/correlations:
+    parameters: [ { $ref: '#/components/parameters/RunId' } ]
+    post:
+      operationId: announceCorrelation
+      summary: Join protocol-native keys to a correlation id (for protocols without headers)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [correlation_id, keys]
+              properties:
+                correlation_id: { type: string, pattern: '^[0-9a-f]{32}$', not: { const: '00000000000000000000000000000000' } }
+                step_id: { type: string }
+                keys: { type: object, additionalProperties: { type: string } }
+      responses:
+        '204': { description: Joined }
+        '422': { $ref: '#/components/responses/Refused' }
+components:
+  securitySchemes:
+    runCredential:
+      type: http
+      scheme: bearer
+      description: Scoped to one run_id; issued by openRun; never logged or emitted.
+  parameters:
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/RunId' }
+  schemas:
+    RunId:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9._-]{2,63}$'
+    Run:
+      type: object
+      required: [run_id, endpoints, opened_at]
+      properties:
+        run_id: { $ref: '#/components/schemas/RunId' }
+        test_run_id: { $ref: '#/components/schemas/RunId' }
+        opened_at: { type: string, format: date-time }
+        endpoints:
+          type: object
+          description: mock name → { protocol, url } handed out by autowire for this run only
+          additionalProperties:
+            type: object
+            required: [protocol, url]
+            properties:
+              protocol: { enum: [http, tcp, smtp, dns, other] }
+              url: { type: string }
+    RunOpened:
+      allOf:
+        - $ref: '#/components/schemas/Run'
+        - type: object
+          required: [credential]
+          properties:
+            credential: { type: string, description: 'The run credential. Returned once; never retrievable again.' }
+    Refusal:
+      type: object
+      required: [message, reason_code]
+      properties:
+        message: { type: string, description: 'What was measured, what was refused, what to do next.' }
+        reason_code:
+          type: string
+          description: Public contract key.
+          examples: [run-id-invalid, run-already-open, run-attached, run-unknown, run-credential-missing, run-credential-invalid, mock-unknown, setting-unknown, setting-out-of-range, setting-type-invalid, listener-protocol-unsupported, listener-unavailable, event-schema-unknown]
+        allowed: { type: array, items: { type: string } }
+  responses:
+    Refused:
+      description: Refused by name
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Refusal' }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mocks.refusal/v1",
+  "title": "Refusal document, version 1",
+  "description": "The Refusal schema of spec/ecosystem-v1/mocks-runs-v1.openapi.yaml (components.schemas.Refusal), restated as JSON Schema so a conformance runner can validate it. 'message' first sentence says what was measured, what was refused and what to do next; 'reason_code' is the public contract key; 'allowed' lists the accepted values where a list exists.",
+  "type": "object",
+  "required": ["message", "reason_code"],
+  "properties": {
+    "message": { "type": "string", "minLength": 20, "maxLength": 2048 },
+    "reason_code": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "allowed": { "type": "array", "items": { "type": "string" } }
+  }
+}
