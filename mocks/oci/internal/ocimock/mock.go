@@ -30,8 +30,9 @@ const (
 
 // Config selects where the control endpoint listens and where the mock logs.
 type Config struct {
-	ControlAddr string      // e.g. "127.0.0.1:9100"
-	Logger      *log.Logger // nil discards; a line never carries a header or a body
+	ControlAddr string           // e.g. "127.0.0.1:9100"
+	Logger      *log.Logger      // nil discards; a line never carries a header or a body
+	Now         func() time.Time // nil is time.Now; tests move the rate-limit window with it
 }
 
 // Mock is a running registry mock.
@@ -64,7 +65,11 @@ func Start(cfg Config) (*Mock, error) {
 	if lg == nil {
 		lg = log.New(io.Discard, "", 0)
 	}
-	m := &Mock{cfg: cfg, log: lg, ln: ln, now: time.Now, scopes: map[string]*scope{}, subs: map[*subscriber]struct{}{}}
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	m := &Mock{cfg: cfg, log: lg, ln: ln, now: now, scopes: map[string]*scope{}, subs: map[*subscriber]struct{}{}}
 	m.controlURL = "http://" + ln.Addr().String()
 	m.srv = &http.Server{Handler: m.controlMux(), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = m.srv.Serve(ln) }() // Serve returns on Close; that error is the shutdown signal.

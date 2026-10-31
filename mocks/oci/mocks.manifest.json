@@ -1,0 +1,65 @@
+{
+  "conformance": {
+    "probe": {
+      "http": {
+        "method": "GET",
+        "path": "/v2/"
+      }
+    }
+  },
+  "contract": "mocks.adapter/v1",
+  "control": {
+    "url": "http://127.0.0.1:9100"
+  },
+  "description": "A free OCI Distribution v2 registry: push, pull, manifests, tags and blob uploads, with auth, a rate limit and missing blobs as scenario settings.",
+  "name": "oci-mock",
+  "protocols": [
+    "http"
+  ],
+  "safe_fields": [
+    "digest",
+    "operation",
+    "reference",
+    "repository"
+  ],
+  "settings": [
+    {
+      "default": false,
+      "description": "When true, every /v2/ call without a bearer token from the listener's /token endpoint answers 401 with a WWW-Authenticate challenge.",
+      "effect": {
+        "expect": {
+          "http_status": 401
+        },
+        "protocol": "http",
+        "value": true
+      },
+      "name": "auth_required",
+      "scope": "run",
+      "type": "boolean"
+    },
+    {
+      "default": 0,
+      "description": "Requests per rolling 60 seconds the /v2/ API answers before it answers 429; 0 is no limit. Every /v2/ request counts, whatever the limit was when it arrived.",
+      "effect": {
+        "expect": {
+          "http_status": 429
+        },
+        "protocol": "http",
+        "value": 1
+      },
+      "maximum": 10000,
+      "minimum": 0,
+      "name": "rate_limit",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": "",
+      "description": "Comma-separated sha256 digests whose blob answers 404 BLOB_UNKNOWN, stored or not; empty is none.",
+      "name": "missing_blob",
+      "scope": "run",
+      "type": "string"
+    }
+  ],
+  "version": "0.1.0"
+}
