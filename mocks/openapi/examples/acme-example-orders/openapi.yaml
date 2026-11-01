@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: Acme Example Orders
+  version: 1.0.0
+  description: A small fictional orders API used to demonstrate openapi-mock.
+servers:
+  - url: https://orders.example.com
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders (answers from the document's examples)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: A page of orders.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+              examples:
+                first-page:
+                  value:
+                    - id: 1001
+                      sku: acme-widget
+                      quantity: 2
+                      status: placed
+    post:
+      operationId: createOrder
+      summary: Place an order (the request body is validated)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewOrder"
+      responses:
+        "201":
+          description: The order that was placed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Fetch one order (answers from its schema, no example)
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+components:
+  schemas:
+    NewOrder:
+      type: object
+      required: [sku, quantity]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          minLength: 3
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+    Order:
+      type: object
+      required: [id, sku, quantity, status]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        sku:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [placed, shipped, cancelled]
