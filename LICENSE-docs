@@ -1,0 +1,14 @@
+Documentation licence
+=====================
+
+The written documentation in this repository (the specification in `spec/`,
+`README.md`, `SECURITY.md`, `CONTRIBUTING.md`, each mock's `README.md` and
+`SKILL.md`) is licensed under the Apache License, Version 2.0, the same terms as
+the code. The full text is in the file `LICENSE`.
+
+You may copy, translate and build on the specification text, including to write
+an independent mock or an independent implementation of the conformance suite,
+provided you keep the licence notice and say what you changed.
+
+The names "Saphan" and "Mocks Studio" are not licensed for use as the name of a
+derived work (Apache-2.0 section 6).
