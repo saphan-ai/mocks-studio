@@ -1,0 +1,75 @@
+{
+  "conformance": {
+    "probe": {
+      "http": {
+        "method": "GET",
+        "path": "/api/v1/namespaces"
+      }
+    }
+  },
+  "contract": "mocks.adapter/v1",
+  "control": {
+    "url": "http://127.0.0.1:9100"
+  },
+  "description": "A slice of the Kubernetes API: namespaces, pods, configmaps and deployments, with watch and scenario settings.",
+  "name": "kubernetes-mock",
+  "protocols": [
+    "http"
+  ],
+  "safe_fields": [
+    "kind",
+    "namespace",
+    "name"
+  ],
+  "settings": [
+    {
+      "default": 0,
+      "description": "Forced HTTP status for every call on the listener; 0 is off, otherwise 400 to 599.",
+      "effect": {
+        "expect": {
+          "http_status": 503
+        },
+        "protocol": "http",
+        "value": 503
+      },
+      "maximum": 599,
+      "minimum": 0,
+      "name": "error_status",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": false,
+      "description": "When true every call is answered 429 with a Retry-After header.",
+      "effect": {
+        "expect": {
+          "http_status": 429
+        },
+        "protocol": "http",
+        "value": true
+      },
+      "name": "throttle",
+      "scope": "run",
+      "type": "boolean"
+    },
+    {
+      "default": 0,
+      "description": "Milliseconds every call waits before it is answered; 0 is off.",
+      "maximum": 60000,
+      "minimum": 0,
+      "name": "latency_ms",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": 0,
+      "description": "A watch opened while this is N ends its stream after N events; 0 means never.",
+      "maximum": 1000000,
+      "minimum": 0,
+      "name": "drop_watch_after_events",
+      "scope": "run",
+      "type": "integer"
+    }
+  ],
+  "version": "0.1.0"
+}
