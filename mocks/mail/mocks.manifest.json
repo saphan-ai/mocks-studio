@@ -1,0 +1,103 @@
+{
+  "contract": "mocks.adapter/v1",
+  "name": "mail-mock",
+  "version": "0.1.0",
+  "description": "SMTP relay with STARTTLS and AUTH, and an IMAP mailbox where caught mail is read back by Message-ID.",
+  "protocols": [
+    "smtp",
+    "tcp"
+  ],
+  "control": {
+    "url": "http://127.0.0.1:19100"
+  },
+  "settings": [
+    {
+      "name": "refuse_recipient",
+      "description": "Comma-separated recipient addresses answered 550 at RCPT TO; empty refuses none.",
+      "type": "string",
+      "default": "",
+      "scope": "run",
+      "effect": {
+        "protocol": "tcp",
+        "value": "refused@acme-example.test",
+        "expect": {
+          "tcp_reply": "550 5.1.1 recipient refused: refused@acme-example.test"
+        }
+      }
+    },
+    {
+      "name": "auth_required",
+      "description": "When true, MAIL FROM before a successful AUTH is answered 530.",
+      "type": "boolean",
+      "default": false,
+      "scope": "run",
+      "effect": {
+        "protocol": "tcp",
+        "value": true,
+        "expect": {
+          "tcp_reply": "530 5.7.0 authentication required"
+        }
+      }
+    },
+    {
+      "name": "smtp_delay_ms",
+      "description": "Milliseconds every SMTP reply after the greeting is held back.",
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 10000,
+      "scope": "run",
+      "effect": {
+        "protocol": "tcp",
+        "value": 250,
+        "expect": {
+          "tcp_reply": "250 2.0.0 ok, replies delayed 250 ms"
+        }
+      }
+    },
+    {
+      "name": "tempfail",
+      "description": "When true, every RCPT TO is answered 451.",
+      "type": "boolean",
+      "default": false,
+      "scope": "run",
+      "effect": {
+        "protocol": "tcp",
+        "value": true,
+        "expect": {
+          "tcp_reply": "451 4.3.0 temporary failure, try again later"
+        }
+      }
+    },
+    {
+      "name": "auth_user",
+      "description": "The user name SMTP AUTH and IMAP LOGIN accept (fictional default).",
+      "type": "string",
+      "default": "agent@acme-example.test",
+      "scope": "run"
+    },
+    {
+      "name": "auth_password",
+      "description": "The password SMTP AUTH and IMAP LOGIN accept (fictional default); never logged, never in an event.",
+      "type": "string",
+      "default": "fictional-password-for-tests",
+      "scope": "run"
+    }
+  ],
+  "safe_fields": [
+    "from",
+    "to",
+    "subject",
+    "message_id"
+  ],
+  "correlation_keys": [
+    "message_id"
+  ],
+  "conformance": {
+    "probe": {
+      "tcp": {
+        "send": "ping"
+      }
+    }
+  }
+}
