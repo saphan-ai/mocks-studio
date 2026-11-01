@@ -1,0 +1,49 @@
+{
+  "contract": "mocks.adapter/v1",
+  "name": "dns-mock",
+  "version": "0.1.0",
+  "description": "A DNS and DNS-over-HTTPS filtering resolver: declared records, declared blocked names, every query an event.",
+  "protocols": ["http", "dns"],
+  "control": { "url": "http://127.0.0.1:9100" },
+  "settings": [
+    {
+      "name": "doh_http_status", "type": "integer", "default": 200, "minimum": 200, "maximum": 599, "scope": "run",
+      "description": "HTTP status the DoH endpoint answers with; 200 returns the DNS answer, anything else is an injected HTTP-level failure with no DNS answer.",
+      "effect": { "protocol": "http", "value": 503, "expect": { "http_status": 503 } }
+    },
+    {
+      "name": "latency_ms", "type": "integer", "default": 0, "minimum": 0, "maximum": 10000, "scope": "run",
+      "description": "Milliseconds every answer is held back, on every transport."
+    },
+    {
+      "name": "servfail", "type": "boolean", "default": false, "scope": "run",
+      "description": "Every query is answered SERVFAIL, whatever is declared."
+    },
+    {
+      "name": "drop_udp", "type": "boolean", "default": false, "scope": "run",
+      "description": "Queries over UDP get no answer at all, so a client retries over TCP or times out. TCP and DoH are unaffected."
+    },
+    {
+      "name": "records", "type": "string", "default": "[]", "scope": "run",
+      "description": "JSON array of records: {\"name\",\"type\" (A, AAAA, CNAME, TXT, MX),\"value\",\"ttl\" (optional, default 60)}. Names lie under example.test or acme-example.test; A values in 192.0.2.0/24, 198.51.100.0/24 or 203.0.113.0/24; AAAA in 2001:db8::/32; an MX value is \"<preference> <host>\"."
+    },
+    {
+      "name": "blocked", "type": "string", "default": "[]", "scope": "run",
+      "description": "JSON array of blocked names under example.test or acme-example.test; a blocked name and every name below it is answered as block_answer says, before any record is consulted."
+    },
+    {
+      "name": "block_answer", "type": "string", "default": "nxdomain", "allowed": ["nxdomain", "refused", "sinkhole"], "scope": "run",
+      "description": "How a blocked name is answered: NXDOMAIN, REFUSED, or the sinkhole_ip address."
+    },
+    {
+      "name": "sinkhole_ip", "type": "string", "default": "192.0.2.53", "scope": "run",
+      "description": "The address a blocked name resolves to when block_answer is sinkhole; from 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 or 2001:db8::/32."
+    }
+  ],
+  "safe_fields": ["qname", "qtype", "rcode", "transport"],
+  "conformance": {
+    "probe": {
+      "http": { "method": "GET", "path": "/dns-query?dns=AAABAAABAAAAAAAABXByb2JlB2V4YW1wbGUEdGVzdAAAAQAB" }
+    }
+  }
+}
