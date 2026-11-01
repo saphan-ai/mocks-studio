@@ -325,7 +325,7 @@ exceed) is a `SKIP` with its reason.
 | `spec/ecosystem-v1/mocks-event-v1.schema.json` | the event envelope (shared by Mocks Studio, Tests Studio and Saphan Studio) |
 | `spec/ecosystem-v1/mocks-event-v1.examples.json` | valid and invalid events, each invalid one breaking one field |
 | `spec/ecosystem-v1/mocks-runs-v1.openapi.yaml` | the run and scenario operations on the core (OpenAPI 3.1) |
-| `conformance/` | the suite and its fixtures: a null mock and, for each rule, a mutant that breaks only that rule |
+| `conformance/` | the suite and its fixtures: today a null mock; a mutant per rule, each breaking only that rule, is planned |
 
 ### A note for implementers whose regular-expression engine is not ECMAScript
 

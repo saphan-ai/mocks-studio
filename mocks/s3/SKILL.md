@@ -27,7 +27,7 @@ The control endpoint (`/_mock/v1/...`, spec §4) is for the core, not for tests.
 with the conformance suite, from the repository root, while it runs:
 
 ```
-go -C conformance run ./cmd/mocks-conformance --manifest mocks/s3/mocks.manifest.json
+go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/s3/mocks.manifest.json
 ```
 
 ## Point your code at it

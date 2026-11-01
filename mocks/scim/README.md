@@ -9,4 +9,4 @@ identity system. It speaks `mocks.adapter/v1`; standard library only; Apache-2.0
 From this directory: `go run ./cmd/scim-mock serve --control 127.0.0.1:9100` and `go test -count=1 ./...`.
 
 How to drive it: [SKILL.md](SKILL.md). Conformance, from the repository root:
-`go -C conformance run ./cmd/mocks-conformance --manifest mocks/scim/mocks.manifest.json`.
+`go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/scim/mocks.manifest.json` (the suite runs inside `conformance/`, so the path starts with `../`).

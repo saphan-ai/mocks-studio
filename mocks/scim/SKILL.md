@@ -97,7 +97,7 @@ the log says only whether an `Authorization` header was present.
 From the repository root:
 
 ```
-go -C conformance run ./cmd/mocks-conformance --manifest mocks/scim/mocks.manifest.json
+go -C conformance run ./cmd/mocks-conformance --manifest ../mocks/scim/mocks.manifest.json
 ```
 
 It must end with `fail=0`. Run it while the mock serves on `127.0.0.1:9100`.
