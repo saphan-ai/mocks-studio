@@ -1,0 +1,104 @@
+{
+  "conformance": {
+    "probe": {
+      "http": {
+        "method": "GET",
+        "path": "/"
+      }
+    }
+  },
+  "contract": "mocks.adapter/v1",
+  "control": {
+    "url": "http://127.0.0.1:9100"
+  },
+  "description": "A free S3-compatible object store: buckets, objects, multipart, presigned URLs, SigV4; slow reads, SlowDown and missing keys as scenarios.",
+  "name": "s3-mock",
+  "protocols": [
+    "http"
+  ],
+  "safe_fields": [
+    "bucket",
+    "key",
+    "operation"
+  ],
+  "settings": [
+    {
+      "default": 0,
+      "description": "Milliseconds every GetObject waits before it answers (a slow read).",
+      "maximum": 60000,
+      "minimum": 0,
+      "name": "get_latency_ms",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": false,
+      "description": "Answer every request 503 SlowDown, S3's throttling error.",
+      "effect": {
+        "expect": {
+          "http_status": 503
+        },
+        "protocol": "http",
+        "value": true
+      },
+      "name": "slow_down",
+      "scope": "run",
+      "type": "boolean"
+    },
+    {
+      "allowed": [
+        0,
+        400,
+        403,
+        404,
+        409,
+        500,
+        501,
+        503
+      ],
+      "default": 0,
+      "description": "Answer every request with this status and a matching S3 XML error; 0 is off.",
+      "effect": {
+        "expect": {
+          "http_status": 500
+        },
+        "protocol": "http",
+        "value": 500
+      },
+      "name": "error_status",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": "",
+      "description": "Object keys that start with this prefix answer NoSuchKey on GET and HEAD, whatever is stored; empty is off.",
+      "name": "missing_key_prefix",
+      "scope": "run",
+      "type": "string"
+    },
+    {
+      "default": 5242880,
+      "description": "Smallest size of a multipart part that is not the last; S3's own rule is 5242880.",
+      "maximum": 5368709120,
+      "minimum": 0,
+      "name": "min_part_bytes",
+      "scope": "run",
+      "type": "integer"
+    },
+    {
+      "default": "AKIAEXAMPLEKEY000001",
+      "description": "The access key id the scope's requests must be signed with (fictional default).",
+      "name": "access_key_id",
+      "scope": "run",
+      "type": "string"
+    },
+    {
+      "default": "exampleSecretAccessKey0000000000EXAMPLEKEY",
+      "description": "The secret access key the scope verifies signatures with (fictional default). Never logged, never in an event.",
+      "name": "secret_access_key",
+      "scope": "run",
+      "type": "string"
+    }
+  ],
+  "version": "0.1.0"
+}
